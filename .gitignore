@@ -1,0 +1,10 @@
+# Ignore the virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Ignore output logs and models (they are too big)
+logs/
+models/
+plots/
+*.json
