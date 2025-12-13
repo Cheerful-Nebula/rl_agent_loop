@@ -115,8 +115,11 @@ def evaluate_agent(model, num_episodes=10):
     avg_x_pos = tracker.rollout_pts_agg[0]['avg'] # Center is 0.0
     avg_y_vel = tracker.rollout_pts_agg[3]['avg']
     avg_angle = tracker.rollout_pts_agg[4]['avg']
+    raw_stats = tracker.get_episode_metrics()
+    std_y_vel = raw_stats[3]['std_dev'] # Index 3 is Y-Velocity
+    std_x_vel = raw_stats[0]['std_dev'] # Index 0 is X-Velocity
 
-# Calculate Engine Usage Ratios
+    # Calculate Engine Usage Ratios
     # 0: Do Nothing, 1: Left Eng, 2: Main Eng, 3: Right Eng
     if total_steps > 0:
         main_engine_usage = action_counts[2] / total_steps
@@ -134,7 +137,9 @@ def evaluate_agent(model, num_episodes=10):
             "avg_descent_velocity": float(avg_y_vel),
             "avg_tilt_angle": float(avg_angle),
             "main_engine_usage": float(main_engine_usage),
-            "side_engine_usage": float(side_engine_usage)
+            "side_engine_usage": float(side_engine_usage),
+            "vertical_stability_index": float(std_y_vel), # Lower is better (more consistent)
+            "horizontal_stability_index": float(std_x_vel)  # Lower is better (more consistent)
         }
     }
 
@@ -147,7 +152,7 @@ def run_training_cycle():
     env = DynamicRewardWrapper(env)
     
     # Train
-    model = PPO("MlpPolicy", env, verbose=1) #, device=Config.get_device())
+    model = PPO("MlpPolicy", env, verbose=0) #, device=Config.get_device())
     print(f"Starting training for {Config.TOTAL_TIMESTEPS} timesteps...")
     model.learn(total_timesteps=Config.TOTAL_TIMESTEPS)
     
