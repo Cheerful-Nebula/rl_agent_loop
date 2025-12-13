@@ -9,7 +9,10 @@ from config import Config
 MODEL_NAME = "qwen2.5-coder" # or "llama3.1"
 HISTORY_DIR = "logs/code_history"
 REASONING_DIR = "logs/reasoning_history"
-
+device = Config.get_device()
+# ---------------------------------------------------------
+# FILE UTILITIES
+# ---------------------------------------------------------
 def load_file(filepath):
     try:
         with open(filepath, 'r') as f:
@@ -28,19 +31,17 @@ def archive_current_code(iteration_id):
     shutil.copy(source, destination)
     print(f"🗂️  Archived code to: {destination}")
 
-def save_reasoning(iteration_id, diagnosis, plan):
+def save_reasoning(iteration_id, content):
     """Saves the diagnosis and plan (Pure Text)."""
     os.makedirs(REASONING_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(REASONING_DIR, f"reasoning_gen{iteration_id:03d}_{timestamp}.md")
     
     with open(filename, "w") as f:
-        f.write(f"# Generator Reasoning (Iteration {iteration_id})\n")
-        f.write(f"## Model: {MODEL_NAME} | Time: {timestamp}\n\n")
-        f.write("### 1. Diagnosis\n")
-        f.write(diagnosis + "\n\n")
-        f.write("### 2. Implementation Plan\n")
-        f.write(plan + "\n")
+            f.write(f"# Generator Reasoning (Iteration {iteration_id})\n")
+            f.write(f"## Model: {MODEL_NAME} | Time: {timestamp}\n\n")
+            f.write("## Analyst Report (Diagnosis & Plan)\n")
+            f.write(content + "\n")
     
     print(f"🧠 Saved reasoning to: {filename}")
 
@@ -55,14 +56,100 @@ def extract_python_code(llm_response):
     match = re.search(r'```(.*?)```', llm_response, re.DOTALL)
     if match: return match.group(1).strip()
     return llm_response
+# ---------------------------------------------------------
+# MEMORY 
+# ---------------------------------------------------------
+# Detailed short-term memory
+def get_recent_history(n=3):
+    """
+    Retrieves the 'Implementation Plan' from the last N reasoning files.
+    """
+    if not os.path.exists(REASONING_DIR):
+        return "No previous history."
+        
+    # Get all reasoning files, sorted by name (which includes timestamp/gen ID)
+    files = sorted([f for f in os.listdir(REASONING_DIR) if f.endswith('.md')])
+    
+    # Take the last N
+    recent_files = files[-n:]
+    history_text = ""
+    
+    for i, filename in enumerate(recent_files):
+        content = load_file(os.path.join(REASONING_DIR, filename))
+        # Crude extraction: Get the text after "### 2. Implementation Plan"
+        if "### 2. Implementation Plan" in content:
+            plan = content.split("### 2. Implementation Plan")[1].strip()
+            history_text += f"\n--- HISTORY ENTRY {i+1} ({filename}) ---\n{plan}\n"
+            
+    return history_text if history_text else "No parseable history found."
 
+# Fuzzy short-term memory
+def get_long_term_memory(current_iteration, retention=3):
+    """
+    Summarizes all iterations older than 'retention'.
+    Returns a concise list of 'Lessons Learned'.
+    """
+    if current_iteration <= retention + 1:
+        return "No long-term history yet."
+        
+    # We want to summarize files from Gen 1 up to (Current - Retention - 1)
+    older_files = []
+    cutoff = current_iteration - retention
+    
+    if not os.path.exists(REASONING_DIR): return ""
+    
+    all_files = sorted([f for f in os.listdir(REASONING_DIR) if f.endswith('.md')])
+    
+    # Filter for files strictly OLDER than the cutoff
+    # Filename format: reasoning_gen005_...
+    for f in all_files:
+        try:
+            gen_num = int(f.split('_gen')[1][:3])
+            if gen_num < cutoff:
+                older_files.append(f)
+        except: continue
+
+    if not older_files:
+        return "No older history to summarize."
+
+    print(f"📚 AGENT: Compressing {len(older_files)} old memories into Long-Term Memory...")
+    
+    # Combine the "Implementation Plan" from these old files
+    combined_text = ""
+    for f in older_files:
+        content = load_file(os.path.join(REASONING_DIR, f))
+        if "### 2. Implementation Plan" in content:
+            plan = content.split("### 2. Implementation Plan")[1].strip()
+            combined_text += f"\n- (Gen {f.split('_gen')[1][:3]}): {plan[:200]}..." # Truncate for token efficiency
+
+    # Ask LLM to distill this
+    summary_prompt = f"""
+    You are an AI Researcher analyzing your past experiments.
+    Here are the short summaries of your old attempts (Generations 1 to {cutoff-1}):
+    {combined_text}
+    
+    TASK:
+    Summarize these into a bulleted list of 3-5 "Immutable Lessons". 
+    What failed? What worked?
+    Example: "- High penalties for tilting caused the agent to freeze."
+    """
+    
+    try:
+        response = ollama.chat(model=MODEL_NAME, messages=[{'role': 'user', 'content': summary_prompt}])
+        return response['message']['content']
+    except:
+        return "Could not generate summary."
 # ---------------------------------------------------------
 # PROMPT ENGINEERING
 # ---------------------------------------------------------
-def get_diagnosis_prompt(metrics, current_code):
+def get_diagnosis_prompt(metrics, current_code, iteration_id):
     stats = metrics['performance']
     diagnostics = metrics.get('diagnostics', {})
     
+    # Fetch Hierarchical Memory
+    short_term_history = get_recent_history(n=3)
+    long_term_memory = get_long_term_memory(iteration_id, retention=3)
+
     # Extract new metrics
     main_eng = diagnostics.get('main_engine_usage', 0)
     side_eng = diagnostics.get('side_engine_usage', 0)
@@ -84,18 +171,26 @@ def get_diagnosis_prompt(metrics, current_code):
     - Main Engine Usage: {main_eng:.2f} (Target: Balanced. If <0.1, it falls. If >0.8, it panics.)
     - Side Engine Usage: {side_eng:.2f} (Target: Low. If >0.5, it is jittering.)
 
+    LONG-TERM MEMORY (Lessons from the distant past):
+    {long_term_memory}
+    
+    SHORT-TERM HISTORY (Recent attempts):
+    {short_term_history}
+
     CURRENT REWARD FUNCTION:
     ```python
     {current_code}
     ```
 
     TASK:
-    1. DIAGNOSE: Why is the agent failing? 
-       - If X-Position is far from 0, it is drifting sideways.
-       - If Main Engine is low (<0.2) and Velocity is high, it isn't trying to fly.
-       - If Side Engines are high, it is wasting energy.
+    1. DIAGNOSE: 
+    - Combine the metrics, telemetry, and memory to identify why the agent is underperforming.
+    - Why is the agent failing? 
+    - Are we repeating past mistakes?
+    - Is the reward function misaligned with our goals?
        
-    2. PLAN: Propose a specific mathematical adjustment to the reward function to fix this.
+    2. PLAN: 
+    - Propose a new mathematical adjustment
     
     OUTPUT FORMAT:
     Provide a clear, concise paragraph explaining the failure and the planned math fix. DO NOT write code yet.
@@ -141,13 +236,13 @@ def run_agentic_improvement():
     
     # 3. PHASE 1: DIAGNOSIS (The "Brain")
     print("🔵 AGENT: Phase 1 - Diagnosing & Planning...")
-    diag_prompt = get_diagnosis_prompt(metrics, current_code)
+    diag_prompt = get_diagnosis_prompt(metrics, current_code, iteration_id)
     try:
         response1 = ollama.chat(model=MODEL_NAME, messages=[{'role': 'user', 'content': diag_prompt}])
         diagnosis_plan = response1['message']['content']
         
         # Save the "Thought" immediately
-        save_reasoning(iteration_id, diagnosis=diagnosis_plan, plan=diagnosis_plan)
+        save_reasoning(iteration_id, diagnosis_plan)
         
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
