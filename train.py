@@ -147,7 +147,7 @@ def run_training_cycle():
     env = DynamicRewardWrapper(env)
     
     # Train
-    model = PPO("MlpPolicy", env, verbose=1)
+    model = PPO("MlpPolicy", env, verbose=1) #, device=Config.get_device())
     print(f"Starting training for {Config.TOTAL_TIMESTEPS} timesteps...")
     model.learn(total_timesteps=Config.TOTAL_TIMESTEPS)
     
