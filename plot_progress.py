@@ -3,6 +3,7 @@ import pandas as pd
 import json
 import os
 import glob
+from config import Config
 
 LOG_DIR = "logs/metrics_history"
 
@@ -50,7 +51,7 @@ def plot_training_history():
     ax2.tick_params(axis='y', labelcolor=color)
     ax2.set_ylim(-0.1, 1.1)
 
-    plt.title("Agentic RL: Optimization Progress")
+    plt.title(f"Agentic RL: Optimization Progress with {Config.LLM_MODEL} on {Config.ENV_ID}")
     plt.tight_layout()
     plt.savefig("progress_report.png")
     print("Graph saved to progress_report.png")
