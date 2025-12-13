@@ -25,6 +25,21 @@ class PositionTracker():
     def start_episode(self):
         self.ep_pos_pts = {i: [] for i in self.obs_idxs}
 
+    def get_episode_metrics(self):
+            """
+            Returns the raw stats for every episode in the current rollout.
+            Useful for calculating variance/std_dev.
+            """
+            # self.rollout_pos_pts[i]['avg'] is a LIST of averages (one per episode)
+            # We want to package this nicely for the LLM
+            stats = {}
+            for i in self.obs_idxs:
+                stats[i] = {
+                    "episodes": self.rollout_pos_pts[i]['avg'].tolist(), # Convert numpy to list
+                    "std_dev": float(np.std(self.rollout_pos_pts[i]['avg']))
+                }
+            return stats
+
     def track_episode(self, obs):
         for i in self.obs_idxs:
             self.ep_pos_pts[i].append(obs[i])
