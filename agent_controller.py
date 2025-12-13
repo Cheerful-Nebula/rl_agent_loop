@@ -6,9 +6,9 @@ import ollama
 from datetime import datetime
 from config import Config
 
-MODEL_NAME = "qwen2.5-coder" # or "llama3.1"
-HISTORY_DIR = "logs/code_history"
-REASONING_DIR = "logs/reasoning_history"
+MODEL_NAME = Config.LLM_MODEL
+HISTORY_DIR = Config.HISTORY_DIR
+REASONING_DIR = Config.REASONING_DIR
 device = Config.get_device()
 # ---------------------------------------------------------
 # FILE UTILITIES
