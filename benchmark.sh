@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the contenders
-MODELS=("qwen2.5-coder" "llama3.1" "deepseek-coder:6.7b")
+MODELS=("mistral:latest" "llama3.1:8b")
 # How many iterations per model?
 ITERATIONS=5
 
@@ -57,6 +57,14 @@ for model in "${MODELS[@]}"; do
         mv logs/reasoning_history "benchmark_results/reasoning_$model"
     else
         echo "⚠️  Warning: No reasoning logs found."
+    fi
+
+    # Move the Code History
+    # This preserves code generation steps for side-by-side comparison
+    if [ -d "logs/code_history" ]; then
+        mv logs/code_history "benchmark_results/code_$model"
+    else
+        echo "⚠️  Warning: No coding logs found."
     fi
 
     echo "✅ Completed run for $model"
