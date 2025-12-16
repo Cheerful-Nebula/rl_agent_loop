@@ -6,13 +6,21 @@ class Config:
     ENV_ID = "LunarLander-v3"
     
     # Training Settings
-    TOTAL_TIMESTEPS = 200000 
+    TOTAL_TIMESTEPS = 300000 
     ALGORITHM = "PPO"
     
+    # Model
+    # Defaults to 'qwen2.5-coder' if not set
+    # other options "llama3.1:8b", "qwen2.5-coder", "deepseek-coder:6.7b"
+    LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5-coder")
+    
+
     # Paths
     METRICS_FILE = "metrics.json"
     MODEL_SAVE_PATH = "models/lunar_lander_mvp"
-    STATE_FILE = "state.json"  # NEW: The source of truth
+    STATE_FILE = "state.json"  # The source of truth for iteration count
+    HISTORY_DIR = "logs/code_history"
+    REASONING_DIR = "logs/reasoning_history"
 
     @staticmethod
     def get_iteration():
