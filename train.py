@@ -1,3 +1,8 @@
+import warnings
+
+# Filter out the specific pkg_resources deprecation warning
+warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
+
 import gymnasium as gym
 import json
 import importlib
@@ -6,6 +11,8 @@ import os
 import shutil
 import glob
 from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from datetime import datetime
 from gymnasium.wrappers import RecordVideo  
 
@@ -13,6 +20,7 @@ from gymnasium.wrappers import RecordVideo
 from config import Config
 import reward_shaping
 from position_tracking import PositionTracker
+
 
 
 # ---------------------------------------------------------
@@ -24,14 +32,43 @@ class DynamicRewardWrapper(gym.Wrapper):
         importlib.reload(reward_shaping)
         print(f"Loaded Reward Module: {reward_shaping.__file__}")
 
+    @staticmethod
+    def is_successful_landing(obs):
+        """
+        Determines if the lander has landed safely based on the observation.
+        LunarLander-v2 Obs: [x, y, vx, vy, angle, angular_vel, leg1_contact, leg2_contact]
+        """
+        x, y, vx, vy, angle, angular_vel, leg1, leg2 = obs
+
+        # 1. Is it on the landing pad? (Pad is at x=0, roughly width +/- 0.2)
+        on_pad = abs(x) <= 0.2
+
+        # 2. Is it upright? (Angle roughly 0)
+        upright = abs(angle) < 0.1  # ~5.7 degrees tolerance
+
+        # 3. Is it stable? (Velocity is low)
+        stable = abs(vx) < 0.1 and abs(vy) < 0.1
+
+        # 4. Are both feet touching the ground?
+        feet_down = (leg1 > 0.5) and (leg2 > 0.5)
+
+        return on_pad and upright and stable and feet_down
+    
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
+
+        # Calculate concrete success independent of the point score
+        success_event = False
+        if terminated:
+            success_event = self.is_successful_landing(obs)
+            # Optional: Overwrite standard success metric in info
+            info["is_success"] = success_event
         try:
             new_reward = reward_shaping.calculate_reward(
                 obs, reward, terminated, truncated, info
             )
         except Exception as e:
-            # print(f"Error in reward shaping: {e}") 
+            print(f"Error in reward shaping: {e}") 
             new_reward = reward
         return obs, new_reward, terminated, truncated, info
 
@@ -51,6 +88,9 @@ def evaluate_agent(model, num_episodes=10):
     # render_mode="rgb_array" is REQUIRED for video recording
     eval_env = gym.make(Config.ENV_ID, render_mode="rgb_array")
     
+    # We must wrap the eval env so it calculates 'is_success' exactly like training
+    eval_env = DynamicRewardWrapper(eval_env)
+
     # Trigger: Record only episode 0 (the first one)
     eval_env = RecordVideo(
         eval_env, 
@@ -68,8 +108,9 @@ def evaluate_agent(model, num_episodes=10):
     total_rewards = []
     crashes = 0
     landings = 0
+    concrete_landings = 0
 
-    # NEW: Action tracking
+    # Action-Use tracking
     action_counts = {0:0, 1:0, 2:0, 3:0} 
     total_steps = 0
 
@@ -95,14 +136,21 @@ def evaluate_agent(model, num_episodes=10):
             action_counts[act_scalar] = action_counts.get(act_scalar, 0) + 1
             total_steps += 1
 
-            obs, reward, terminated, truncated, _ = eval_env.step(action)
+            obs, reward, terminated, truncated, info = eval_env.step(action)
             
             tracker.track_episode(obs)
             ep_reward += reward
             
             if terminated or truncated:
+                # 1. Legacy Check (Box2D Reward Threshold)
                 if reward <= -100: crashes += 1
                 elif reward >= 100: landings += 1
+                
+                # 2. Concrete Check (Your new logic)
+                # We use .get() because truncated episodes might not have the key
+                if info.get('is_success', False):
+                    concrete_landings += 1
+                    
                 done = True
                 
         tracker.end_episode(terminated)
@@ -130,7 +178,8 @@ def evaluate_agent(model, num_episodes=10):
 
     return {
         "mean_reward": float(np.mean(total_rewards)),
-        "success_rate": landings / num_episodes,
+        "success_rate": landings / num_episodes,          # The "Game Score" success
+        "concrete_success_rate": concrete_landings / num_episodes, # The "Physics" success
         "crash_rate": crashes / num_episodes,
         "diagnostics": {
             "avg_x_position": float(avg_x_pos),
@@ -148,11 +197,38 @@ def evaluate_agent(model, num_episodes=10):
 # ---------------------------------------------------------
 def run_training_cycle():
     # Setup
-    env = gym.make(Config.ENV_ID)
-    env = DynamicRewardWrapper(env)
+    env = make_vec_env(
+            Config.ENV_ID,
+            n_envs=Config.N_ENVS,
+            vec_env_cls=SubprocVecEnv,
+            # KEY CHANGE: Pass the class itself, not an instance.
+            # SB3 will instantiate this wrapper inside each separate process.
+            wrapper_class=DynamicRewardWrapper 
+        )
     
-    # Train
-    model = PPO("MlpPolicy", env, verbose=0) #, device=Config.get_device())
+    # 2. MATH: Scaling for the 3080
+    # Calculations:
+    # Buffer Size = 256 steps * 32 envs = 8,192 transitions per update.
+    # Batch Size  = 2048. 
+    # This means the 3080 will process the buffer in 4 massive chunks (8192 / 2048 = 4).
+    # This is much more efficient for the GPU than tiny batches of 128.
+    # Tune PPO for the Crowd
+
+    model = PPO(
+        "MlpPolicy",
+        env,
+        device=Config.get_device(),          # The 3080 does the thinking
+        n_steps=256,            # Keep this short to update frequently
+        batch_size=2048,         # Larger batch for the 3080
+        n_epochs=10,            # More epochs because we have a larger, diverse batch
+        gamma=0.999,            # Long horizon for landing
+        gae_lambda=0.98,
+        ent_coef=0.01,          # Encourage exploration
+        verbose=1
+    )
+    
+
+    print(f"Training on {Config.N_ENVS} envs with Total Buffer: {256*Config.N_ENVS}")
     print(f"Starting training for {Config.TOTAL_TIMESTEPS} timesteps...")
     model.learn(total_timesteps=Config.TOTAL_TIMESTEPS)
     
@@ -172,7 +248,7 @@ def run_training_cycle():
         },
         "performance": stats
     }
-    
+ 
     # Save "Hot" File (The Contract)
     with open(Config.METRICS_FILE, "w") as f:
         json.dump(metrics, f, indent=4)
