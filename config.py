@@ -4,9 +4,10 @@ import torch
 class Config:
     # Environment Settings
     ENV_ID = "LunarLander-v3"
+    N_ENVS = 32
     
     # Training Settings
-    TOTAL_TIMESTEPS = 300000 
+    TOTAL_TIMESTEPS = 500000 
     ALGORITHM = "PPO"
     
     # Model
