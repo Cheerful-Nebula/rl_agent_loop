@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MAX_LOOPS=6
+MAX_LOOPS=30
 COUNTER=1
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -16,15 +16,15 @@ do
 
     # 0. TICK THE CLOCK (Single Source of Truth)
     # We use python to increment the state.json file
-    python -c "from config import Config; i = Config.increment_iteration(); print(f'🕒 State updated to Iteration {i}')"
+    python3 -c "from config import Config; i = Config.increment_iteration(); print(f'🕒 State updated to Iteration {i}')"
 
     # 1. Train the Agent (It will read the NEW iteration number)
     echo -e "${GREEN}[Step 1] Training Agent...${NC}"
-    python train.py
+    python3 train.py
 
     # 2. Improve the Code (It will read the SAME iteration number)
     echo -e "${GREEN}[Step 2] Designing New Reward Function...${NC}"
-    python agent_controller.py
+    python3 agent_controller.py
 
     ((COUNTER++))
     sleep 5
