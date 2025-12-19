@@ -8,3 +8,6 @@ logs/
 models/
 plots/
 *.json
+
+# Unit tests/ experimental scripts
+unit_tests/successful_run_test.py
