@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the contenders
-MODELS=("qwen2.5-coder:7b")
+MODELS=("deepseek-coder:6.7b")
 # How many iterations per model?
 ITERATIONS=5
 
