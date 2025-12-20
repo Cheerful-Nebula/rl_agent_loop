@@ -13,6 +13,7 @@ import glob
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.logger import configure
 from datetime import datetime
 from gymnasium.wrappers import RecordVideo  
 
@@ -20,7 +21,7 @@ from gymnasium.wrappers import RecordVideo
 from config import Config
 import reward_shaping
 from position_tracking import PositionTracker
-
+import utils
 
 
 # ---------------------------------------------------------
@@ -30,7 +31,7 @@ class DynamicRewardWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         importlib.reload(reward_shaping)
-        print(f"Loaded Reward Module: {reward_shaping.__file__}")
+
 
     @staticmethod
     def is_successful_landing(obs):
@@ -40,17 +41,10 @@ class DynamicRewardWrapper(gym.Wrapper):
         """
         x, y, vx, vy, angle, angular_vel, leg1, leg2 = obs
 
-        # 1. Is it on the landing pad? (Pad is at x=0, roughly width +/- 0.2)
-        on_pad = abs(x) <= 0.2
-
-        # 2. Is it upright? (Angle roughly 0)
-        upright = abs(angle) < 0.1  # ~5.7 degrees tolerance
-
-        # 3. Is it stable? (Velocity is low)
-        stable = abs(vx) < 0.1 and abs(vy) < 0.1
-
-        # 4. Are both feet touching the ground?
-        feet_down = (leg1 > 0.5) and (leg2 > 0.5)
+        on_pad = abs(x) <= 0.2 # 1. Is it on the landing pad? (Pad is at x=0, roughly width +/- 0.2)
+        upright = abs(angle) < 0.1  # 2. Is it upright? (Angle roughly 0) ~5.7 degrees tolerance
+        stable = abs(vx) < 0.1 and abs(vy) < 0.1 # 3. Is it stable? (Velocity is low)
+        feet_down = (leg1 > 0.5) and (leg2 > 0.5) # 4. Are both feet touching the ground?
 
         return on_pad and upright and stable and feet_down
     
@@ -85,7 +79,6 @@ def evaluate_agent(model, num_episodes=10):
     video_folder = f"logs/videos/iter_{iteration:03d}"
     
     # 1. Create Eval Env with Video Recording
-    # render_mode="rgb_array" is REQUIRED for video recording
     eval_env = gym.make(Config.ENV_ID, render_mode="rgb_array")
     
     # We must wrap the eval env so it calculates 'is_success' exactly like training
@@ -201,33 +194,37 @@ def run_training_cycle():
             Config.ENV_ID,
             n_envs=Config.N_ENVS,
             vec_env_cls=SubprocVecEnv,
-            # KEY CHANGE: Pass the class itself, not an instance.
-            # SB3 will instantiate this wrapper inside each separate process.
-            wrapper_class=DynamicRewardWrapper 
+            wrapper_class=DynamicRewardWrapper # SB3 will instantiate this wrapper inside each separate process.
         )
     
+    iteration = Config.get_iteration()
+    # Create a StableBaselines3 logger
+    sb3_dir = os.path.join(Config.SB3_DIR,f"iter_{iteration:03d}")
+    # Configure the logger to output to terminal (stdout) AND json
+    new_logger = configure(sb3_dir, ["stdout", "json"])                     
+
     # 2. MATH: Scaling for the 3080
     # Calculations:
     # Buffer Size = 256 steps * 32 envs = 8,192 transitions per update.
     # Batch Size  = 2048. 
     # This means the 3080 will process the buffer in 4 massive chunks (8192 / 2048 = 4).
-    # This is much more efficient for the GPU than tiny batches of 128.
     # Tune PPO for the Crowd
-
     model = PPO(
         "MlpPolicy",
         env,
         device=Config.get_device(),          # The 3080 does the thinking
-        n_steps=256,            # Keep this short to update frequently
-        batch_size=2048,         # Larger batch for the 3080
-        n_epochs=10,            # More epochs because we have a larger, diverse batch
-        gamma=0.999,            # Long horizon for landing
+        n_steps=256,                         # Keep this short to update frequently
+        batch_size=2048,                     # Larger batch for the 3080
+        n_epochs=10,                         # More epochs because we have a larger, diverse batch
+        gamma=0.999,                         # Long horizon for landing
         gae_lambda=0.98,
-        ent_coef=0.01,          # Encourage exploration
-        verbose=1
+        ent_coef=0.01,                       # Encourage exploration
+        verbose=0
     )
     
-
+    # Attach the logger to the model
+    model.set_logger(new_logger)
+    
     print(f"Training on {Config.N_ENVS} envs with Total Buffer: {256*Config.N_ENVS}")
     print(f"Starting training for {Config.TOTAL_TIMESTEPS} timesteps...")
     model.learn(total_timesteps=Config.TOTAL_TIMESTEPS)
@@ -253,17 +250,11 @@ def run_training_cycle():
     with open(Config.METRICS_FILE, "w") as f:
         json.dump(metrics, f, indent=4)
 
-    # Archive with Iteration ID (Consistency)
-    iteration = Config.get_iteration() # Get the number we used for everything else 
-    archive_dir = "logs/metrics_history"
-    os.makedirs(archive_dir, exist_ok=True)
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive_path = os.path.join(archive_dir, f"metrics_gen{iteration:03d}_{timestamp_str}.json")
-    shutil.copy(Config.METRICS_FILE, archive_path)
+    # Archive metrics with Iteration ID 
+    utils.save_metrics(Config.get_iteration()) 
+ 
     
     print(f"\nTRAINING COMPLETE.")
-    print(f"Metrics saved to: {Config.METRICS_FILE}")
-    print(f"History archived to: {archive_path}")
     print(f"Mean Reward: {stats['mean_reward']:.2f}")
     print(f"Crash Rate: {stats['crash_rate']:.2f}")
     print(f"Main Engine Usage: {stats['diagnostics']['main_engine_usage']:.2f}")
