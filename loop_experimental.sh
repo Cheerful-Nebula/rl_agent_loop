@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MAX_LOOPS=30
+MAX_LOOPS=10
 COUNTER=1
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'

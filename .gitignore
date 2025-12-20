@@ -8,7 +8,8 @@ logs/
 models/
 plots/
 *.json
-
+# This script is overwritten by the LLMs everytime so changes every run
+reward_shaping.py 
 # Unit tests/ experimental scripts
 unit_tests/successful_run_test.py
 *_experimental.py

@@ -272,7 +272,13 @@ def run_agentic_improvement():
         
         # 3. Validation Loop
         validator = CodeValidator(clean_code)
-        is_valid, feedback = validator.validate()
+
+        # STEP A: Static Check (Syntax/Security)
+        is_valid, feedback = validator.validate_static()
+
+        # STEP B: Runtime Check (Only if static passed)
+        if is_valid:
+            is_valid, feedback = validator.validate_runtime()
 
         attempt_num = 0
         MAX_RETRIES = 20 # Safety limit
@@ -295,9 +301,11 @@ def run_agentic_improvement():
             
             clean_code = extract_python_code(response_fix['message']['content'])
             
-            # Re-validate
+            # Re-validate (Static -> Runtime)
             validator = CodeValidator(clean_code)
-            is_valid, feedback = validator.validate()
+            is_valid, feedback = validator.validate_static()
+            if is_valid:
+                is_valid, feedback = validator.validate_runtime()
 
         # 6. Final Save
         if is_valid:
