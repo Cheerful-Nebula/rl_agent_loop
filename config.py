@@ -7,7 +7,7 @@ class Config:
     N_ENVS = 32
     
     # Training Settings
-    TOTAL_TIMESTEPS = 500000 
+    TOTAL_TIMESTEPS = 200000 
     ALGORITHM = "PPO"
     
     # Model
@@ -20,8 +20,10 @@ class Config:
     METRICS_FILE = "metrics.json"
     MODEL_SAVE_PATH = "models/lunar_lander_mvp"
     STATE_FILE = "state.json"  # The source of truth for iteration count
-    HISTORY_DIR = "logs/code_history"
+    CODE_DIR = "logs/code_history"
     REASONING_DIR = "logs/reasoning_history"
+    METRICS_DIR = "logs/metrics_history"
+    SB3_DIR = "logs/sb3_log_history"
 
     @staticmethod
     def get_iteration():
