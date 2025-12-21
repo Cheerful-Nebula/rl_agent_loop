@@ -6,13 +6,11 @@ class Config:
     ENV_ID = "LunarLander-v3"
     N_ENVS = 32
     
-    # Training Settings
-    TOTAL_TIMESTEPS = 200000 
+    # Training Settings/ env variable set in benchmark.sh / defaults to 50k
+    TOTAL_TIMESTEPS = int(os.getenv("TOTAL_TIMESTEPS", 50000)) 
     ALGORITHM = "PPO"
     
-    # Model
-    # Defaults to 'qwen2.5-coder' if not set
-    # other options "llama3.1:8b", "qwen2.5-coder", "deepseek-coder:6.7b"
+    # Model / Defaults to 'qwen2.5-coder' if not set
     LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5-coder")
     
 
@@ -45,13 +43,3 @@ class Config:
         with open(Config.STATE_FILE, 'w') as f:
             json.dump({"iteration": new_iter}, f)
         return new_iter
-    
-    @staticmethod
-    def get_device():
-        """Auto-detect best available hardware."""
-        if torch.cuda.is_available():
-            return "cuda"
-        elif torch.backends.mps.is_available():
-            return "mps"
-        else:
-            return "cpu"
