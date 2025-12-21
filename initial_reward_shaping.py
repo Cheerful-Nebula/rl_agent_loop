@@ -11,10 +11,10 @@ def calculate_reward(observation, original_reward, terminated, truncated, info):
     """
     
     # ---------------------------------------------------------
-    # AGENT LOGIC GOES HERE
+    # Write your code here, Doctor
     # ---------------------------------------------------------
     
-    # For now, we just pass the original reward through.
+
     shaped_reward = original_reward
 
     return shaped_reward

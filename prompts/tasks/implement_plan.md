@@ -9,5 +9,6 @@ Implement the following improvement plan to fix the RL reward function.
 ```
 ## Instructions
 - Rewrite the calculate_reward function based on the plan.
-- Keep imports and function signature exactly the same.
+- Keep function signature exactly the same.
+- Include neccesary imports above function signature
 - Return ONLY valid Python code inside python blocks.
