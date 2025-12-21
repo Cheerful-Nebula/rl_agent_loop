@@ -9,7 +9,8 @@ DIRS_TO_CLEAR = [
     "logs/code_history",
     "logs/metrics_history",
     "logs/reasoning_history",
-    "logs/videos"
+    "logs/videos",
+    "logs/sb3_log_history"
 ]
 
 FILES_TO_DELETE = [
