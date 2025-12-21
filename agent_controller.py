@@ -25,10 +25,13 @@ def get_diagnosis_prompt(metrics, current_code, iteration_id):
     stats = metrics['performance']
     diagnostics = metrics.get('diagnostics', {})
     
+    # 1. Fetch Training Dynamics
+    sb3_dir = os.path.join(Config.SB3_DIR,f"iter_{iteration_id:03d}")
+    training_summary = utils.summarize_training_log(sb3_dir)
     # 1. Prepare the Data
     # (Fetch memory logic remains the same)
     short_term_history = utils.get_recent_history(n=3)
-    long_term_memory = utils.get_long_term_memory(iteration_id, retention=3)
+    long_term_memory = utils.get_long_term_memory(iteration_id, MODEL_NAME, retention=3)
 
     # 2. Retrieve the Role (The "Who")
     system_role = prompts.get_role("rl_researcher")
@@ -40,6 +43,7 @@ def get_diagnosis_prompt(metrics, current_code, iteration_id):
     user_task = prompts.get_task(
         "diagnose_agent",
         env_id=Config.ENV_ID,
+        # RL Agent Positional Info
         success_rate=stats['success_rate'],
         crash_rate=stats.get('crash_rate', 0),
         avg_descent=diagnostics.get('avg_descent_velocity', 0),
@@ -49,11 +53,18 @@ def get_diagnosis_prompt(metrics, current_code, iteration_id):
         side_eng=diagnostics.get('side_engine_usage', 0),
         y_std=diagnostics.get('vertical_stability_index',0),
         x_std=diagnostics.get('horizontal_stability_index',0),
+        # Training Dynamics
+        entropy_start=training_summary.get('entropy_start', 'N/A'),
+        entropy_end=training_summary.get('entropy_end', 'N/A'),
+        entropy_trend=training_summary.get('entropy_trend', 'Unknown'),
+        value_loss_avg=training_summary.get('value_loss_avg', 'N/A'),
+        policy_loss_end=training_summary.get('policy_loss_end', 'N/A'),
+        # Memories
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
         current_code=current_code if current_code else "# No previous code"
     )
-
+    print(f"user_task in get_dianosis_prompt function: {user_task}")
     # Return both so the controller can send them to the LLM
     return system_role, user_task
 
@@ -104,7 +115,7 @@ def run_agentic_improvement():
     
     # 1. Get Prompts
     diag_role, diag_task = get_diagnosis_prompt(metrics, current_code, iteration_id)
-    
+    print("*" * 50, f"\nuser_task in get_dianosis_prompt function: {diag_task}", "*"* 50)
     try:
         # 2. Call LLM
         response = ollama.chat(model=MODEL_NAME, messages=[
@@ -114,7 +125,7 @@ def run_agentic_improvement():
 
         diagnosis_plan = response['message']['content']
         print(f"📝 Plan: {diagnosis_plan}")
-        utils.save_reasoning(iteration_id, diagnosis_plan)
+        utils.save_reasoning(iteration_id, diagnosis_plan,MODEL_NAME)
         
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
@@ -136,7 +147,7 @@ def run_agentic_improvement():
         ])
         
         clean_code = utils.extract_python_code(response2['message']['content'])
-        
+        print("*"*50 , f"clean_code : {clean_code}")
         # 3. Validation Loop
         validator = CodeValidator(clean_code)
 
