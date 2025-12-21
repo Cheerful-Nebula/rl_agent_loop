@@ -14,6 +14,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.logger import configure
+from stable_baselines3.common.monitor import Monitor
 from datetime import datetime
 from gymnasium.wrappers import RecordVideo  
 
@@ -189,42 +190,40 @@ def evaluate_agent(model, num_episodes=10):
 # 3. Main Training Loop
 # ---------------------------------------------------------
 def run_training_cycle():
+    # Hardware Aware Scaling
+    n_envs, device = utils.get_hardware_config()
+    ppo_params = utils.get_optimized_ppo_params(n_envs, device)
     # Setup
     env = make_vec_env(
             Config.ENV_ID,
             n_envs=Config.N_ENVS,
             vec_env_cls=SubprocVecEnv,
-            wrapper_class=DynamicRewardWrapper # SB3 will instantiate this wrapper inside each separate process.
+            wrapper_class=DynamicRewardWrapper
         )
     
     iteration = Config.get_iteration()
     # Create a StableBaselines3 logger
     sb3_dir = os.path.join(Config.SB3_DIR,f"iter_{iteration:03d}")
     # Configure the logger to output to terminal (stdout) AND json
-    new_logger = configure(sb3_dir, ["stdout", "json"])                     
+    new_logger = configure(sb3_dir, ["json"])                     
 
-    # 2. MATH: Scaling for the 3080
-    # Calculations:
-    # Buffer Size = 256 steps * 32 envs = 8,192 transitions per update.
-    # Batch Size  = 2048. 
-    # This means the 3080 will process the buffer in 4 massive chunks (8192 / 2048 = 4).
-    # Tune PPO for the Crowd
+
     model = PPO(
         "MlpPolicy",
         env,
-        device=Config.get_device(),          # The 3080 does the thinking
-        n_steps=256,                         # Keep this short to update frequently
-        batch_size=2048,                     # Larger batch for the 3080
-        n_epochs=10,                         # More epochs because we have a larger, diverse batch
-        gamma=0.999,                         # Long horizon for landing
+        device=ppo_params['device'],
+        n_steps=ppo_params['n_steps'],                   
+        batch_size=ppo_params['batch_size'],
+        n_epochs=10,
+        gamma=0.999,
         gae_lambda=0.98,
-        ent_coef=0.01,                       # Encourage exploration
+        ent_coef=0.01,
         verbose=0
     )
     
     # Attach the logger to the model
     model.set_logger(new_logger)
-    
+
     print(f"Training on {Config.N_ENVS} envs with Total Buffer: {256*Config.N_ENVS}")
     print(f"Starting training for {Config.TOTAL_TIMESTEPS} timesteps...")
     model.learn(total_timesteps=Config.TOTAL_TIMESTEPS)
@@ -245,19 +244,14 @@ def run_training_cycle():
         },
         "performance": stats
     }
- 
     # Save "Hot" File (The Contract)
     with open(Config.METRICS_FILE, "w") as f:
         json.dump(metrics, f, indent=4)
 
     # Archive metrics with Iteration ID 
     utils.save_metrics(Config.get_iteration()) 
- 
     
     print(f"\nTRAINING COMPLETE.")
-    print(f"Mean Reward: {stats['mean_reward']:.2f}")
-    print(f"Crash Rate: {stats['crash_rate']:.2f}")
-    print(f"Main Engine Usage: {stats['diagnostics']['main_engine_usage']:.2f}")
 
 if __name__ == "__main__":
     run_training_cycle()
