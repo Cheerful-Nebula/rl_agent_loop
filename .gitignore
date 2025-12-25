@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 
 # Ignore output logs and models (they are too big)
+experiments/
+.misc/
 logs/
 models/
 plots/
@@ -14,3 +16,4 @@ reward_shaping.py
 unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh
+*_old.py
