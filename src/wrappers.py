@@ -1,47 +1,37 @@
-# ==========================================
-# The logic of the agent's environment/ The Sensor Layer
-# ==========================================
-
-
+# src/wrappers.py
 import gymnasium as gym
-import importlib
-import reward_shaping # This assumes reward_shaping.py is in the root
+from src import utils  # <--- Needed for loading the module inside the child process
 
 class DynamicRewardWrapper(gym.Wrapper):
     """
     Injects the LLM-generated reward function into the environment.
     """
-    def __init__(self, env):
+    def __init__(self, env, reward_code_path=None):
         super().__init__(env)
-        # Reload ensures we get the LATEST version of the code without restarting python
-        importlib.reload(reward_shaping)
+        self.reward_module = None
+        
+        # Load the module INSIDE the process that actually runs the environment
+        if reward_code_path:
+            try:
+                # We use the helper from utils to load from the string path
+                self.reward_module = utils.load_dynamic_module("current_reward", reward_code_path)
+            except Exception as e:
+                print(f"⚠️ Wrapper failed to load reward module from {reward_code_path}: {e}")
 
-    @staticmethod
-    def is_successful_landing(obs):
-        """Standard definition of a safe landing"""
-        x, y, vx, vy, angle, angular_vel, leg1, leg2 = obs
-        on_pad = abs(x) <= 0.2 
-        upright = abs(angle) < 0.1 
-        stable = abs(vx) < 0.1 and abs(vy) < 0.1 
-        feet_down = (leg1 > 0.5) and (leg2 > 0.5) 
-        return on_pad and upright and stable and feet_down
-    
     def step(self, action):
+        # 1. Execute the Action (ONCE)
         obs, reward, terminated, truncated, info = self.env.step(action)
+           
+        # 2. Inject LLM Reward Logic (If module is loaded)
+        if self.reward_module:
+            try:
+                # We pass the obs/info resulting from the step above
+                new_reward = self.reward_module.calculate_reward(obs, action, info)
+                return obs, new_reward, terminated, truncated, info
 
-        # 1. Calculate Concrete Success
-        if terminated:
-            success_event = self.is_successful_landing(obs)
-            info["is_success"] = success_event
+            except Exception as e:
+                # If the user's code crashes, fail silently and use default reward
+                # (You can enable print here for debugging if needed)
+                pass
             
-        # 2. Inject LLM Reward Logic
-        try:
-            new_reward = reward_shaping.calculate_reward(
-                obs, reward, terminated, truncated, info
-            )
-        except Exception as e:
-            # Fallback if LLM code crashes
-            # print(f"Error in reward shaping: {e}") 
-            new_reward = reward
-            
-        return obs, new_reward, terminated, truncated, info
+        return obs, reward, terminated, truncated, info
