@@ -1,26 +1,31 @@
 # ==========================================
 # Evaluation Module for Agentic RL / The Exam Layer
 # ==========================================
-
+import os 
 import gymnasium as gym
 import numpy as np
 from gymnasium.wrappers import RecordVideo
-from wrappers import DynamicRewardWrapper
-from position_tracking import PositionTracker
-from config import Config
+
+# -- custom imports --
+from src.position_tracking import PositionTracker
+from src.config import Config
 
 def evaluate_agent(model, num_episodes=10, run_id="latest"):
     """
-    Runs the agent and collects detailed stats.
+    Runs the agent on the STANDARD environment to check true performance.
     Records a video of the FIRST episode.
     """
-    # Define video path based on Run ID
-    video_folder = f"experiments/{run_id}/artifacts/visuals"
+    # Define video path using the run_id passed from train.py
+    # Note: run_id here is expected to be "Iter_005" or similar
+    # We reconstruct the full path assuming standard workspace structure
+    # But since we are inside python, we can just use the path passed by train.py if we wanted.
+    # For now, we rely on the relative path which works if run from root.
+    video_folder = os.path.join("experiments", Config.CAMPAIGN_TAG, run_id, "artifacts", "visuals", "videos")
     
-    # 1. Create Eval Env with Video Recording
-    # We trigger recording only for episode 0
+    # 1. Create Eval Env (STANDARD - No Reward Shaping)
     eval_env = gym.make(Config.ENV_ID, render_mode="rgb_array")
-    eval_env = DynamicRewardWrapper(eval_env)
+    
+    # Trigger recording only for episode 0
     eval_env = RecordVideo(
         eval_env, 
         video_folder, 
@@ -40,7 +45,7 @@ def evaluate_agent(model, num_episodes=10, run_id="latest"):
     action_counts = {0:0, 1:0, 2:0, 3:0} 
     total_steps = 0
 
-    print(f"🎥 Recording video to: {video_folder}")
+    print(f"🎥 Recording evaluation video to: {video_folder}")
     
     for i in range(num_episodes):
         tracker.start_episode()

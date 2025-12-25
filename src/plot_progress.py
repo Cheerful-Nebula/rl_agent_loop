@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import os
 import glob
-from config import Config
+from src.config import Config
 
 LOG_DIR = "logs/metrics_history"
 
