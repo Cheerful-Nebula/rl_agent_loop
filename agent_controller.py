@@ -1,132 +1,76 @@
-import json
-import os
-import re
-import shutil
+import argparse
 import ollama
 from datetime import datetime 
 import warnings
-
-# Filter out the specific pkg_resources deprecation warning
+import os
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
-# Project specific modules
-from config import Config
-from code_validation import CodeValidator
-import prompts 
-import utils
+# -- PROJECT IMPORTS --
+import prompts  
+from src.workspace_manager import ExperimentWorkspace
+from src.code_validation import CodeValidator
+from src import utils
+from src.config import Config
 
 MODEL_NAME = Config.LLM_MODEL
 
-# ---------------------------------------------------------
-# PROMPT ENGINEERING
-# ---------------------------------------------------------
-
-def get_diagnosis_prompt(metrics, current_code, iteration_id):
-    stats = metrics['performance']
-    diagnostics = metrics.get('diagnostics', {})
+def run_agentic_improvement(iteration):
+    # 1. Initialize Workspace
+    ws = ExperimentWorkspace()
+    print(f"🔵 AGENT (Iter {iteration}): Active in {ws.model_root_path}")
     
-    # 1. Fetch Training Dynamics
-    sb3_dir = os.path.join(Config.SB3_DIR,f"iter_{iteration_id:03d}")
-    training_summary = utils.summarize_training_log(sb3_dir)
-    # 1. Prepare the Data
-    # (Fetch memory logic remains the same)
-    short_term_history = utils.get_recent_history(n=3)
-    long_term_memory = utils.get_long_term_memory(iteration_id, MODEL_NAME, retention=3)
-
-    # 2. Retrieve the Role (The "Who")
-    system_role = prompts.get_role("rl_researcher")
-
-    # 3. Retrieve the Task (The "What")
-    # Notice we pass the raw variables into the function.
-    # The formatting logic {variable:.2f} is handled inside the Markdown file or here if preferred.
-    # To keep the markdown file simple, passing pre-formatted strings or raw floats works.
-    user_task = prompts.get_task(
-        "diagnose_agent",
-        env_id=Config.ENV_ID,
-        # RL Agent Positional Info
-        success_rate=stats['success_rate'],
-        crash_rate=stats.get('crash_rate', 0),
-        avg_descent=diagnostics.get('avg_descent_velocity', 0),
-        avg_tilt=diagnostics.get('avg_tilt_angle', 0),
-        avg_x=diagnostics.get('avg_x_position', 0),
-        main_eng=diagnostics.get('main_engine_usage', 0),
-        side_eng=diagnostics.get('side_engine_usage', 0),
-        y_std=diagnostics.get('vertical_stability_index',0),
-        x_std=diagnostics.get('horizontal_stability_index',0),
-        # Training Dynamics
-        entropy_start=training_summary.get('entropy_start', 'N/A'),
-        entropy_end=training_summary.get('entropy_end', 'N/A'),
-        entropy_trend=training_summary.get('entropy_trend', 'Unknown'),
-        value_loss_avg=training_summary.get('value_loss_avg', 'N/A'),
-        policy_loss_end=training_summary.get('policy_loss_end', 'N/A'),
-        # Memories
-        long_term_memory=long_term_memory,
-        short_term_history=short_term_history,
-        current_code=current_code if current_code else "# No previous code"
-    )
-    print(f"user_task in get_dianosis_prompt function: {user_task}")
-    # Return both so the controller can send them to the LLM
-    return system_role, user_task
-
-
-def get_coding_prompts(plan, current_code):
-    """Generates the role and task for the initial code generation."""
-    role = prompts.get_role("python_coder")
-    task = prompts.get_task(
-        "implement_plan", 
-        plan=plan, 
-        current_code=current_code if current_code else "# No existing code"
-    )
-    return role, task
-
-def get_fix_prompts(invalid_code, feedback):
-    """Generates the role and task for the debugging loop."""
-    # We stick with the Python Expert role for fixing
-    role = prompts.get_role("python_coder")
-    task = prompts.get_task(
-        "fix_code", 
-        clean_code=invalid_code, 
-        feedback=feedback
-    )
-    return role, task
-
-# ---------------------------------------------------------
-# MAIN LOOP
-# ---------------------------------------------------------
-def run_agentic_improvement():
-    # -- Setup
-    iteration_id = Config.get_iteration()
-    print(f"🔵 AGENT (Iter {iteration_id}): Reading state...")
-    
-    if not os.path.exists(Config.METRICS_FILE):
-        print("❌ No metrics found.")
+    # 2. Load Context (The "Eyes" of the Agent)
+    # A. Metrics from the run just finished
+    metrics = ws.load_metrics(iteration)
+    if not metrics:
+        print(f"❌ No metrics found for Iteration {iteration}. Cannot proceed.")
         return
 
-    metrics = json.loads(utils.load_file(Config.METRICS_FILE))
-    current_code = utils.load_file("reward_shaping.py")
+    # B. The code that produced those metrics (Previous Iteration)
+    if iteration == 1:
+        prev_code_path = "seed_reward.py"
+    else:
+        prev_code_path = ws.get_path("code", iteration - 1, "reward.py")
     
-    # -- Archive Previous Reward Shaping code
-    utils.archive_current_code(iteration_id)
-    
+    with open(prev_code_path, "r") as f:
+        current_code = f.read()
+
+    # C. Training Dynamics (Tensorboard Summary)
+    tb_dir = ws.dirs["tensorboard"]
+    training_summary = utils.summarize_training_log(str(tb_dir))
+
+    # D. Long/Short Term Memory
+    short_term_history = utils.get_recent_history(ws, iteration)
+    long_term_memory = utils.get_long_term_memory(ws, iteration, MODEL_NAME)
+
+
     # =========================================================
     # PHASE 1: DIAGNOSIS (The "Brain")
     # =========================================================
     print("🔵 AGENT: Phase 1 - Diagnosing & Planning...")
     
-    # 1. Get Prompts
-    diag_role, diag_task = get_diagnosis_prompt(metrics, current_code, iteration_id)
-    print("*" * 50, f"\nuser_task in get_dianosis_prompt function: {diag_task}", "*"* 50)
+    # Build Prompt using our new Clean Builder
+    diag_role, diag_task = prompts.build_diagnosis_prompt(
+        metrics=metrics,
+        current_code=current_code,
+        training_summary=training_summary,
+        long_term_memory=long_term_memory,
+        short_term_history=short_term_history
+    )
+
     try:
-        # 2. Call LLM
         response = ollama.chat(model=MODEL_NAME, messages=[
             {'role': 'system', 'content': diag_role},
             {'role': 'user', 'content': diag_task}
         ])
-
         diagnosis_plan = response['message']['content']
-        print(f"📝 Plan: {diagnosis_plan}")
-        utils.save_reasoning(iteration_id, diagnosis_plan,MODEL_NAME)
         
+        # Save the plan for human review
+        plan_path = ws.get_path("cognition", iteration, "plan.md")
+        with open(plan_path, "w") as f:
+            f.write(diagnosis_plan)
+        print(f"📝 Plan saved to {plan_path}")
+            
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
         return
@@ -136,67 +80,62 @@ def run_agentic_improvement():
     # =========================================================
     print("🔵 AGENT: Phase 2 - Writing Code...")
     
-    # 1. Get Prompts (Refactored)
-    code_role, code_task = get_coding_prompts(diagnosis_plan, current_code)
+    code_role, code_task = prompts.build_coding_prompt(diagnosis_plan, current_code)
 
     try:
-        # 2. Call LLM (Initial Write)
         response2 = ollama.chat(model=MODEL_NAME, messages=[
             {'role': 'system', 'content': code_role},
             {'role': 'user', 'content': code_task}
         ])
         
         clean_code = utils.extract_python_code(response2['message']['content'])
-        print("*"*50 , f"clean_code : {clean_code}")
-        # 3. Validation Loop
+        
+        # --- VALIDATION LOOP ---
         validator = CodeValidator(clean_code)
-
-        # STEP A: Static Check (Syntax/Security)
         is_valid, feedback = validator.validate_static()
-
-        # STEP B: Runtime Check (Only if static passed)
         if is_valid:
             is_valid, feedback = validator.validate_runtime()
 
         attempt_num = 0
-        MAX_RETRIES = 20 # Safety limit
+        MAX_RETRIES = 5 # Reduced from 20 for speed
         
         while not is_valid and attempt_num < MAX_RETRIES:
             attempt_num += 1
-            print(f"⚠️ AGENT: Validation failed (Attempt {attempt_num}). Requesting fix...")
+            print(f"⚠️ Validation failed (Attempt {attempt_num}). Fixing...")
             
-            # Archive the broken attempt for later analysis
-            utils.archive_current_code(iteration_id, attempt_num=attempt_num) 
-
-            # 4. Get Fix Prompts (Refactored)
-            fix_role, fix_task = get_fix_prompts(clean_code, feedback)
+            fix_role, fix_task = prompts.build_fix_prompt(clean_code, feedback)
             
-            # 5. Call LLM (Fix Request)
             response_fix = ollama.chat(model=MODEL_NAME, messages=[
                 {'role': 'system', 'content': fix_role},
                 {'role': 'user', 'content': fix_task}
             ])
             
             clean_code = utils.extract_python_code(response_fix['message']['content'])
-            
-            # Re-validate (Static -> Runtime)
             validator = CodeValidator(clean_code)
             is_valid, feedback = validator.validate_static()
             if is_valid:
                 is_valid, feedback = validator.validate_runtime()
 
-        # 6. Final Save
+        # --- FINAL SAVE ---
         if is_valid:
+            # Save to the CURRENT iteration's folder
+            save_path = ws.get_path("code", iteration, "reward.py")
+            
             timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            header = f"# Generated by {MODEL_NAME} (Iter {iteration_id}) on {timestamp_str}\n"
-            utils.save_code(header + clean_code, "reward_shaping.py")
-            print("✅ AGENT: Code validated and saved.")
+            header = f"# Generated by {MODEL_NAME} (Iter {iteration}) on {timestamp_str}\n"
+            
+            with open(save_path, "w") as f:
+                f.write(header + clean_code)
+            print(f"✅ Code validated and saved: {save_path}")
         else:
-            print("❌ AGENT: Failed to generate valid code after multiple attempts.")
+            print("❌ Failed to generate valid code.")
 
     except Exception as e:
         print(f"❌ Phase 2 Error: {e}")
 
-
 if __name__ == "__main__":
-    run_agentic_improvement()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--iteration", type=int, required=True)
+    args = parser.parse_args()
+    
+    run_agentic_improvement(args.iteration)
