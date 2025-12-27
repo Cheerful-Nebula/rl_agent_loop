@@ -1,7 +1,0 @@
-gymnasium[box2d]
-stable-baselines3
-shimmy>=0.2.1
-numpy
-matplotlib
-torch
-ollama
