@@ -18,7 +18,8 @@ def build_diagnosis_prompt(metrics, current_code, training_summary, long_term_me
     user_task = task_template.format(
         env_id="LunarLander-v3", # Or pass in as arg
         # RL Metrics
-        success_rate=stats.get('success_rate', 0),
+        reward_success_rate=stats.get('reward_success_rate', 0),
+        position_success_rate=stats.get('position_success_rate', 0),
         crash_rate=stats.get('crash_rate', 0),
         avg_descent=diagnostics.get('avg_descent_velocity', 0),
         avg_tilt=diagnostics.get('avg_tilt_angle', 0),

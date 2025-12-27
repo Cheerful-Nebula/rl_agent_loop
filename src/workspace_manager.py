@@ -38,6 +38,7 @@ class ExperimentWorkspace:
             "root": self.model_root_path,
             "cognition": self.model_root_path / "cognition",
             "code": self.model_root_path / "generated_code",
+            "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
             "tensorboard": self.model_root_path / "telemetry" / "tensorboard",
             "telemetry_raw": self.model_root_path / "telemetry" / "raw",
             "plots": self.model_root_path / "artifacts" / "plots",

@@ -1,7 +1,8 @@
 Analyze the agent's performance on '{env_id}'.
 
 ## Metrics
-- Success Rate: {success_rate:.4f} (Target: >0.9)
+- Reward Success Rate (Reward > 200): {reward_success_rate:.4f} (Target: >0.9)
+- Position Success Rate (based of terminal observation): {position_success_rate:.4f} (Target: > 0.5)
 - Crash Rate: {crash_rate:.4f} (Target: <0.1)
 
 ## Flight Telemetry

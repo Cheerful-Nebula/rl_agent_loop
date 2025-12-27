@@ -1,13 +1,16 @@
 import os
 import re
 import json
+import csv
+import difflib
 import ollama
 import torch
 import platform
 import importlib.util
 import sys
 import numpy as np
-
+from pathlib import Path
+from datetime import datetime
 # ---------------------------------------------------------
 # FILE OPERATIONS
 # ---------------------------------------------------------
@@ -37,7 +40,76 @@ def load_dynamic_module(module_name, file_path):
         spec.loader.exec_module(module)
         return module
     raise ImportError(f"Could not load module {module_name} from {file_path}")
+# ---------------------------------------------------------
+# SCIENTIFIC LOGGING & ANALYSIS
+# ---------------------------------------------------------
+def update_campaign_summary(ws, iteration, metrics):
+    """
+    Appends a summary row to the master campaign CSV file.
+    Acts as the 'Scoreboard' for the entire experiment.
+    """
+    csv_path = ws.model_root_path / "campaign_summary.csv"
+    
+    headers = [
+        "Iteration", "Timestamp", "Mean_Reward", "Reward_Success_Rate", "Position_Success_Rate",
+        "Crash_Rate", "Fuel_Efficiency", "Stability_Index", "Generation_Status"
+    ]
+    
+    perf = metrics.get("performance", {})
+    diag = perf.get("diagnostics", {})
+    status = metrics.get("generation_status", "unknown") # Passed from controller
+    
+    row_data = {
+        "Iteration": iteration,
+        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Mean_Reward": round(perf.get("mean_reward", 0), 2),
+        "Reward_Success_Rate": round(perf.get("reward_success_rate", 0), 2),
+        "Position_Success_Rate": round(perf.get("position_success_rate", 0), 2),
+        "Crash_Rate": round(perf.get("crash_rate", 0), 2),
+        "Fuel_Efficiency": round(diag.get("main_engine_usage", 0), 4),
+        "Stability_Index": round(diag.get("vertical_stability_index", 0), 4),
+        "Generation_Status": status
+    }
 
+    file_exists = csv_path.exists()
+    
+    with open(csv_path, mode='a', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row_data)
+        
+    print(f"📈 Campaign Summary updated: {csv_path}")
+
+def generate_patch(old_code: str, new_code: str, filename: str) -> str:
+    """Compares two source strings and returns a Unified Diff."""
+    diff = difflib.unified_diff(
+        old_code.splitlines(keepends=True), 
+        new_code.splitlines(keepends=True), 
+        fromfile=f"prev/{filename}", 
+        tofile=f"new/{filename}",
+        lineterm=""
+    )
+    return "".join(diff)
+
+def save_diff(old_code, new_code, iteration, attempt, base_dir):
+    """Saves a delta patch between attempts to track debugging logic."""
+    filename = f"iter{iteration:02d}_attempt_{attempt:02d}.patch"
+    filepath = base_dir / filename
+    
+    diff = difflib.unified_diff(
+        old_code.splitlines(keepends=True),
+        new_code.splitlines(keepends=True),
+        fromfile=f"Code Gen. Attempt {attempt-1}",
+        tofile=f"Code Gen. Attempt {attempt}",
+        lineterm=""
+    )
+    
+    text = "".join(diff)
+    if text:
+        with open(filepath, "w") as f:
+            f.write(text)
+    return filepath
 # ---------------------------------------------------------
 # MEMORY FUNCTIONS (Now Workspace-Aware)
 # ---------------------------------------------------------

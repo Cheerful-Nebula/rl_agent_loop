@@ -7,10 +7,11 @@ import numpy as np
 from gymnasium.wrappers import RecordVideo
 
 # -- custom imports --
+from src.workspace_manager import ExperimentWorkspace
 from src.position_tracking import PositionTracker
 from src.config import Config
 
-def evaluate_agent(model, num_episodes=10, run_id="latest"):
+def evaluate_agent(model, run_id, num_episodes=10):
     """
     Runs the agent on the STANDARD environment to check true performance.
     Records a video of the FIRST episode.
@@ -20,7 +21,8 @@ def evaluate_agent(model, num_episodes=10, run_id="latest"):
     # We reconstruct the full path assuming standard workspace structure
     # But since we are inside python, we can just use the path passed by train.py if we wanted.
     # For now, we rely on the relative path which works if run from root.
-    video_folder = os.path.join("experiments", Config.CAMPAIGN_TAG, run_id, "artifacts", "visuals", "videos")
+    ws = ExperimentWorkspace()
+    video_folder = ws.get_path("videos", run_id, "video")
     
     # 1. Create Eval Env (STANDARD - No Reward Shaping)
     eval_env = gym.make(Config.ENV_ID, render_mode="rgb_array")
@@ -40,8 +42,8 @@ def evaluate_agent(model, num_episodes=10, run_id="latest"):
 
     total_rewards = []
     crashes = 0
-    landings = 0
-    concrete_landings = 0
+    reward_successes = 0
+    position_landings = 0
     action_counts = {0:0, 1:0, 2:0, 3:0} 
     total_steps = 0
 
@@ -69,8 +71,21 @@ def evaluate_agent(model, num_episodes=10, run_id="latest"):
             
             if terminated or truncated:
                 if reward <= -100: crashes += 1
-                elif reward >= 100: landings += 1
-                if info.get('is_success', False): concrete_landings += 1
+                elif reward >= 100: reward_successes += 1
+                # Ported from ComprehensiveEvalCallback
+                term_obs = info.get("terminal_observation")
+                # Fallback: Use current obs if terminal_observation is missing
+                if term_obs is None: 
+                    term_obs = obs
+                
+                if term_obs is not None:
+                    # Logic: Center < 0.2, Upright < 0.1 rad, Both Legs Touching
+                    is_centered = abs(term_obs[0]) < 0.2
+                    is_upright = abs(term_obs[4]) < 0.1
+                    legs_down = term_obs[6] > 0.5 and term_obs[7] > 0.5
+                    
+                    if is_centered and is_upright and legs_down:
+                        position_landings += 1
                 done = True
                 
         tracker.end_episode(terminated)
@@ -90,8 +105,8 @@ def evaluate_agent(model, num_episodes=10, run_id="latest"):
     
     return {
         "mean_reward": float(np.mean(total_rewards)),
-        "success_rate": landings / num_episodes,
-        "concrete_success_rate": concrete_landings / num_episodes,
+        "reward_success_rate": reward_successes / num_episodes,
+        "position_success_rate": position_landings / num_episodes,
         "crash_rate": crashes / num_episodes,
         "diagnostics": {
             "avg_x_position": float(tracker.rollout_pts_agg[0]['avg']),

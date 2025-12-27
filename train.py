@@ -92,8 +92,8 @@ def run_training_cycle(iteration):
     model.save(model_save_path)
     
     print("📊 Running Evaluation...")
-    # Use the helper to get the run ID string
-    stats = evaluate_agent(model, num_episodes=10, run_id=f"Iter_{iteration:03d}")
+
+    stats = evaluate_agent(model, run_id=iteration, num_episodes=10)
     
     # 8. Handoff to Controller (Save Metrics)
     metrics_payload = {
