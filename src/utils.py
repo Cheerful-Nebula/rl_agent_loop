@@ -51,25 +51,41 @@ def update_campaign_summary(ws, iteration, metrics):
     csv_path = ws.model_root_path / "campaign_summary.csv"
     
     headers = [
-        "Iteration", "Timestamp", "Mean_Reward", "Reward_Success_Rate", "Position_Success_Rate",
-        "Crash_Rate", "Fuel_Efficiency", "Stability_Index", "Generation_Status"
-    ]
+            "Iteration", "Timestamp", 
+            # Eval Metrics
+            "Eval_Reward_Mean", "Eval_Reward_Std", "Eval_Ep_Len_Mean",
+            "Reward_Success_Rate", "Position_Success_Rate", "Crash_Rate", 
+            # Training Metrics (TensorBoard)
+            "Train_Reward_Mean", "Entropy_End", "Value_Loss_Avg", "Policy_Loss_End",
+            # Diagnostics
+            "Fuel_Efficiency", "Stability_Index", "Generation_Status"
+        ]
     
     perf = metrics.get("performance", {})
     diag = perf.get("diagnostics", {})
+    train_dyn = metrics.get("training_dynamics", {})
     status = metrics.get("generation_status", "unknown") # Passed from controller
     
     row_data = {
-        "Iteration": iteration,
-        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Mean_Reward": round(perf.get("mean_reward", 0), 2),
-        "Reward_Success_Rate": round(perf.get("reward_success_rate", 0), 2),
-        "Position_Success_Rate": round(perf.get("position_success_rate", 0), 2),
-        "Crash_Rate": round(perf.get("crash_rate", 0), 2),
-        "Fuel_Efficiency": round(diag.get("main_engine_usage", 0), 4),
-        "Stability_Index": round(diag.get("vertical_stability_index", 0), 4),
-        "Generation_Status": status
-    }
+            "Iteration": iteration,
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            
+            "Eval_Reward_Mean": round(perf.get("mean_reward", 0), 2),
+            "Eval_Reward_Std": round(perf.get("std_reward", 0), 2),
+            "Eval_Ep_Len_Mean": round(perf.get("mean_ep_length", 0), 2),
+            "Reward_Success_Rate": round(perf.get("reward_success_rate", 0), 2),
+            "Position_Success_Rate": round(perf.get("position_success_rate", 0), 2),
+            "Crash_Rate": round(perf.get("crash_rate", 0), 2),
+            
+            "Train_Reward_Mean": round(train_dyn.get("raw_train_reward", 0), 2),
+            "Entropy_End": round(train_dyn.get("raw_entropy", 0), 4),
+            "Value_Loss_Avg": round(train_dyn.get("raw_value_loss", 0), 4),
+            "Policy_Loss_End": round(train_dyn.get("raw_policy_loss", 0), 4),
+            
+            "Fuel_Efficiency": round(diag.get("main_engine_usage", 0), 4),
+            "Stability_Index": round(diag.get("vertical_stability_index", 0), 4),
+            "Generation_Status": status
+        }
 
     file_exists = csv_path.exists()
     
@@ -81,6 +97,81 @@ def update_campaign_summary(ws, iteration, metrics):
         
     print(f"📈 Campaign Summary updated: {csv_path}")
 
+def save_readable_context(workspace, iteration, context_dict):
+    """
+    Converts the raw context dictionary into a beautiful Markdown file 
+    for human debugging.
+    """
+    metrics = context_dict.get('metrics', {})
+    training = context_dict.get('training_summary', {})
+    memory = context_dict.get('memory_context', {})
+    prompts = context_dict.get('prompts', {})
+
+    md_content = f"""# Iteration {iteration} Context Report
+**Timestamp:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## 1. The "Eyes" (Incoming Data)
+### Performance Metrics
+| Metric | Value |
+| :--- | :--- |
+| Mean Reward | {metrics.get('performance', {}).get('mean_reward', 'N/A')} |
+| Reward Success Rate | {metrics.get('performance', {}).get('reward_success_rate', 'N/A')} |
+| Position Success Rate | {metrics.get('performance', {}).get('position_success_rate', 'N/A')} |
+| Crash Rate | {metrics.get('performance', {}).get('crash_rate', 'N/A')} |
+
+### Training Dynamics
+- **Entropy:** {training.get('entropy_start')} -> {training.get('entropy_end')}
+- **Value Loss:** {training.get('value_loss_avg')}
+
+## 2. The "Memory"
+### Short Term
+```text
+{memory.get('short', 'No history')}
+```
+### Long Term
+```text
+{memory.get('long', 'No history')}
+```
+## 3. The Prompts Sent
+### Diagnosis Prompt
+```text
+{prompts.get('diagnosis_task', 'N/A')}
+```"""
+    md_path = workspace.get_path("cognition", iteration, "context_report.md")
+    with open(md_path, "w") as f:
+        f.write(md_content)
+    print(f"🧠 Context report saved: {md_path}")
+
+def summarize_training_log(log_dir): 
+    """ Reads SB3 progress.json. Returns Strings for LLM, Floats for CSV. """ 
+    log_path = os.path.join(log_dir, "progress.json") 
+    if not os.path.exists(log_path): return {"error": "No training log."}
+    data = []
+    try:
+        with open(log_path, 'r') as f:
+            for line in f:
+                if line.strip(): data.append(json.loads(line))
+    except: return {"error": "Parse error."}
+
+    if not data: return {"error": "Empty log."}
+
+    first, last = data[0], data[-1]
+    val_loss_avg = np.mean([d.get('train/value_loss', 0) for d in data])
+
+    return {
+        # Strings for LLM
+        "entropy_start": f"{first.get('train/entropy_loss', 0):.4f}",
+        "entropy_end": f"{last.get('train/entropy_loss', 0):.4f}",
+        "entropy_trend": "Collapsing" if last.get('train/entropy_loss', 0) < -1.0 else "Stable",
+        "value_loss_avg": f"{val_loss_avg:.4f}",
+        "policy_loss_end": f"{last.get('train/policy_gradient_loss', 0):.4f}",
+        
+        # Raw Floats for CSV
+        "raw_train_reward": float(last.get('rollout/ep_rew_mean', 0)),
+        "raw_entropy": float(last.get('train/entropy_loss', 0)),
+        "raw_value_loss": float(val_loss_avg),
+        "raw_policy_loss": float(last.get('train/policy_gradient_loss', 0))
+    }
 def generate_patch(old_code: str, new_code: str, filename: str) -> str:
     """Compares two source strings and returns a Unified Diff."""
     diff = difflib.unified_diff(
