@@ -137,6 +137,9 @@ def run_agentic_improvement(iteration):
                     f.write(f"# Error: {feedback}\n")
                     f.write(clean_code)
             else: 
+                with open(fail_path, "w") as f:
+                    f.write(f"# Error: {feedback}\n")
+                    f.write(clean_code)
                 utils.save_diff(previous_attempt_code, clean_code, iteration, attempt_num, fail_path)
             previous_attempt_code = clean_code # Update anchor
             print(f"⚠️ Validation failed. Bad code saved to: {fail_path.name}")
@@ -200,6 +203,7 @@ def run_agentic_improvement(iteration):
     metrics["generation_status"] = generation_status
     utils.update_campaign_summary(ws, iteration, metrics)
     ws.save_metrics(iteration, cognition_snapshot) # Saves as JSON in telemetry/raw
+    utils.save_readable_context(ws, iteration, cognition_snapshot['input_context']) # . Save Markdown (For Humans/Debugging) 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
