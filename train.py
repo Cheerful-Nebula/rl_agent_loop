@@ -7,7 +7,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
-
+from stable_baselines3.common.logger import Logger, make_output_format
+from stable_baselines3.common.logger import Logger, CSVOutputFormat, HumanOutputFormat, TensorBoardOutputFormat
+from pathlib import Path
 # -- Custom IMPORTS --
 from src.workspace_manager import ExperimentWorkspace
 from src import utils
@@ -19,8 +21,7 @@ from src.config import Config # Still used for static settings like ENV_ID
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 def run_training_cycle(iteration):
-    # 1. Initialize Workspace
-    # This automatically latches onto the Campaign/Model from Bash
+    # 1. Initialize Workspace, creates file structure for collected data
     ws = ExperimentWorkspace()
     print(f"🚀 [Iter {iteration}] Initializing Training in: {ws.model_root_path}")
 
@@ -38,31 +39,42 @@ def run_training_cycle(iteration):
     print(f"📥 Loading Reward Function from: {reward_code_path}")
     #current_reward_module = utils.load_dynamic_module("current_reward", reward_code_path)
 
-    # 3. Setup Hardware
+    # 3. Setup Hardware, helper functions for hardware-aware hyperparameter optimization
     n_envs, device = utils.get_hardware_config()
     ppo_params = utils.get_optimized_ppo_params(n_envs, device)
 
-    # 4. Create Environment with Injection
+    # 4. Create Environment, custom wrapper for injecting new Reward Function
     def make_env():
         import gymnasium as gym
         env = gym.make(Config.ENV_ID)
-        
-        # CORRECT: Passing the string path, NOT the module object
         env = DynamicRewardWrapper(env, reward_code_path=str(reward_code_path)) 
         return Monitor(env)
 
-    # Use the workspace tensorboard path
     env = make_vec_env(make_env, n_envs=Config.N_ENVS, vec_env_cls=SubprocVecEnv)
 
-    # 5. Initialize Callbacks
-    # We use the workspace path for raw logs
-    json_log_dir = ws.dirs["telemetry_raw"]
-    
-    supervisor_callback = AgenticObservationTracker(
-        obs_indices=[4, 6, 7], 
-        save_path=json_log_dir
-    )
+    # 5. Grab Paths for saving raw metrics and tensorboards
+    log_dir = ws.dirs["telemetry_raw"] 
+    tb_log_dir = str(ws.dirs["tensorboard"])
+    suffix = f"_{iteration:03d}"
+    # One subdirectory per iteration for TensorBoard
+    tb_log_dir = Path(tb_log_dir) / f"Iter_{iteration:03d}"
+    tb_log_dir.mkdir(parents=True, exist_ok=True)
+    # Initialize Callbacks
+    supervisor_callback = AgenticObservationTracker(obs_indices=[4, 6, 7], save_path=log_dir)
     metrics_callback = ComprehensiveEvalCallback(threshold_score=200)
+
+
+    output_formats = [
+        # Optional: stdout logging
+        # make_output_format("stdout", str(log_dir), suffix),
+
+        # Per-iteration CSV: telemetry_raw/progress_XXX.csv
+        make_output_format("csv",        str(log_dir), suffix),
+
+        # Per-iteration TensorBoard events: tensorboard/Iter_XXX/events.out.tfevents...
+        make_output_format("tensorboard", str(tb_log_dir), ""),
+    ]
+    logger = Logger(folder=str(log_dir), output_formats=output_formats)
 
     # 6. Train
     print(f"🏋️ Training on {device}...")
@@ -72,19 +84,20 @@ def run_training_cycle(iteration):
         device=ppo_params['device'],
         n_steps=ppo_params['n_steps'],                   
         batch_size=ppo_params['batch_size'],
-        tensorboard_log=str(ws.dirs["tensorboard"]),
+        #tensorboard_log=tb_log_dir,
         n_epochs=10,
         gamma=0.999,
         gae_lambda=0.98,
         ent_coef=0.01,
         verbose=0
     )
-    
+    print(f"Model training with n_steps: {ppo_params['n_steps']}, batch_size: {ppo_params['batch_size']}")
+    model.set_logger(logger)
     # Use formatted string for TB log name
     model.learn(
         total_timesteps=Config.TOTAL_TIMESTEPS, 
         callback=[supervisor_callback, metrics_callback],
-        tb_log_name=f"Iter_{iteration:03d}"
+    #    tb_log_name=f"Iter_{iteration:03d}"
     )
     
     # 7. Save & Evaluate
@@ -94,17 +107,23 @@ def run_training_cycle(iteration):
     print("📊 Running Evaluation...")
 
     stats = evaluate_agent(model, run_id=iteration, num_episodes=10)
-    
+
+    # 7b. CAPTURE TRAINING DYNAMICS (For Survival Analysis and Inferential Statistical Tests post-experiment)    
+    training_dynamics = utils.summarize_training_log(tb_log_dir)
+
     # 8. Handoff to Controller (Save Metrics)
     metrics_payload = {
         "timestamp": datetime.now().isoformat(),
         "iteration": iteration,
         "config": {"total_timesteps": Config.TOTAL_TIMESTEPS},
         "performance": stats,
+        "training_dynamics": training_dynamics,
         "source_code_path": str(reward_code_path)
     }
     
+    # Save the detailed JSON (Raw Data)
     ws.save_metrics(iteration, metrics_payload)
+    
     print(f"✅ Training Cycle Complete. Metrics passed to Controller.")
 
 if __name__ == "__main__":

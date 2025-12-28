@@ -5,7 +5,7 @@ import os
 import gymnasium as gym
 import numpy as np
 from gymnasium.wrappers import RecordVideo
-
+from stable_baselines3.common.monitor import Monitor
 # -- custom imports --
 from src.workspace_manager import ExperimentWorkspace
 from src.position_tracking import PositionTracker
@@ -16,11 +16,6 @@ def evaluate_agent(model, run_id, num_episodes=10):
     Runs the agent on the STANDARD environment to check true performance.
     Records a video of the FIRST episode.
     """
-    # Define video path using the run_id passed from train.py
-    # Note: run_id here is expected to be "Iter_005" or similar
-    # We reconstruct the full path assuming standard workspace structure
-    # But since we are inside python, we can just use the path passed by train.py if we wanted.
-    # For now, we rely on the relative path which works if run from root.
     ws = ExperimentWorkspace()
     video_folder = ws.get_path("videos", run_id, "video")
     
@@ -34,13 +29,14 @@ def evaluate_agent(model, run_id, num_episodes=10):
         episode_trigger=lambda x: x == 0,
         disable_logger=True
     )
-    
+    eval_env = Monitor(eval_env)
     # 2. Setup Tracker
     target_indices = [0, 3, 4] # X-Pos, Y-Vel, Angle
     tracker = PositionTracker(target_indices, 0, Config.ALGORITHM, Config.ENV_ID)
     tracker.start_rollout()
 
     total_rewards = []
+    episode_lengths = [] # Track for Survival Analysis
     crashes = 0
     reward_successes = 0
     position_landings = 0
@@ -56,7 +52,8 @@ def evaluate_agent(model, run_id, num_episodes=10):
         
         done = False
         ep_reward = 0
-        
+        ep_len = 0
+
         while not done:
             action, _ = model.predict(obs)
             
@@ -64,12 +61,14 @@ def evaluate_agent(model, run_id, num_episodes=10):
             act_scalar = int(action)
             action_counts[act_scalar] = action_counts.get(act_scalar, 0) + 1
             total_steps += 1
+            ep_len += 1
 
             obs, reward, terminated, truncated, info = eval_env.step(action)
             tracker.track_episode(obs)
             ep_reward += reward
             
             if terminated or truncated:
+                print("Episode info:", info)
                 if reward <= -100: crashes += 1
                 elif reward >= 100: reward_successes += 1
                 # Ported from ComprehensiveEvalCallback
@@ -90,7 +89,8 @@ def evaluate_agent(model, run_id, num_episodes=10):
                 
         tracker.end_episode(terminated)
         total_rewards.append(ep_reward)
-    
+        episode_lengths.append(ep_len)
+
     tracker.end_rollout()
     eval_env.close() 
     
@@ -105,9 +105,16 @@ def evaluate_agent(model, run_id, num_episodes=10):
     
     return {
         "mean_reward": float(np.mean(total_rewards)),
+        "std_reward": float(np.std(total_rewards)), 
+        "mean_ep_length": float(np.mean(episode_lengths)),
         "reward_success_rate": reward_successes / num_episodes,
         "position_success_rate": position_landings / num_episodes,
         "crash_rate": crashes / num_episodes,
+
+        # RAW DATA FOR SURVIVAL ANALYSIS (Kaplan-Meier)
+        "raw_episode_lengths": episode_lengths, 
+        "raw_outcomes": ["crash" if r <= -100 else "landed" for r in total_rewards],
+
         "diagnostics": {
             "avg_x_position": float(tracker.rollout_pts_agg[0]['avg']),
             "avg_descent_velocity": float(tracker.rollout_pts_agg[3]['avg']),

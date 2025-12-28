@@ -297,7 +297,6 @@ def summarize_training_log(log_dir):
 # HARDWARE
 # ---------------------------------------------------------
 def get_optimized_ppo_params(n_envs, device_type="auto"):
-    # (Keep your existing logic here, it was good)
     TARGET_BUFFER_SIZE = 8192 
     TARGET_NUM_MINIBATCHES = 4 
     n_steps = max(int(TARGET_BUFFER_SIZE // n_envs), 16)
