@@ -8,7 +8,6 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import Logger, make_output_format
-from stable_baselines3.common.logger import Logger, CSVOutputFormat, HumanOutputFormat, TensorBoardOutputFormat
 from pathlib import Path
 # -- Custom IMPORTS --
 from src.workspace_manager import ExperimentWorkspace
