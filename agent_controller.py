@@ -119,52 +119,63 @@ def run_agentic_improvement(iteration):
         
         validator = CodeValidator(clean_code)
         is_valid, feedback = validator.validate_static()
-        if is_valid: is_valid, feedback = validator.validate_runtime()
+        if is_valid: 
+            is_valid, feedback = validator.validate_runtime()
 
     except Exception as e:
-        feedback = str(e)
-        print(f"❌ Phase 2 Error: {e}")
+        # Catch network/parsing errors, treat as invalid to trigger loop
+        feedback = f"Generation Error: {str(e)}"
+        is_valid = False
+        print(f"❌ Phase 2 Initial Error: {e}")
 
-        # Retry Loop
-        while not is_valid and attempt_num <= MAX_RETRIES:
-            attempt_num += 1
-            print(f"⚠️ Validation failed (Attempt {attempt_num}). Feedback: {feedback}")
-            # Save the bad code so we can analyze it later
-            fail_filename = f"fail_{attempt_num:02d}.py"
-            fail_path = ws.get_path("failed_code", iteration, fail_filename)
-            if attempt_num == 1:
-                with open(fail_path, "w") as f:
-                    f.write(f"# Error: {feedback}\n")
-                    f.write(clean_code)
-            else: 
-                with open(fail_path, "w") as f:
-                    f.write(f"# Error: {feedback}\n")
-                    f.write(clean_code)
-                utils.save_diff(previous_attempt_code, clean_code, iteration, attempt_num, fail_path)
-            previous_attempt_code = clean_code # Update anchor
-            print(f"⚠️ Validation failed. Bad code saved to: {fail_path.name}")
-            print(f"⚠️ Validation failed (Attempt {attempt_num}). Fixing...")
+    # --- RETRY LOOP ---
+    # This runs if validation failed OR if an exception occurred above
+    while not is_valid and attempt_num < MAX_RETRIES:
+        attempt_num += 1
+        print(f"⚠️ Validation failed (Attempt {attempt_num}). Feedback: {feedback}")
+        
+        # Save to the 'failed_code' directory defined in Workspace
+        fail_dir = ws.dirs["failed_code"]
+        fail_filename = f"fail_{attempt_num:02d}.py"
+        fail_path = ws.get_path("failed_code", iteration, fail_filename)
+        
+        if attempt_num == 1:
+            with open(fail_path, "w") as f:
+                f.write(f"# Error: {feedback}\n")
+                f.write(clean_code)
+        else: 
+            # Subsequent failures: Save diffs for Debugging Delta Analysis
+            utils.save_diff(previous_attempt_code, clean_code, iteration, attempt_num, fail_dir)
+            with open(fail_path, "w") as f:
+                f.write(f"# Error: {feedback}\n")
+                f.write(clean_code)
             
-            fix_role, fix_task = prompts.build_fix_prompt(clean_code, feedback)
-            try:
-                fix_response = ollama.chat(model=MODEL_NAME, messages=[
-                    {'role': 'system', 'content': fix_role},
-                    {'role': 'user', 'content': fix_task}
-                ])
-                            # adding prompts to cognition snapshot for visability, analysis and debugging later
-                cognition_snapshot["prompts"].update({
-                    f"fix_roles_{attempt_num}": fix_role, 
-                    f"fix_task_{attempt_num}": fix_task,
-                    f"fix_response_{attempt_num}": fix_response
-                })
-                clean_code = utils.extract_python_code(fix_response['message']['content'])
-                validator = CodeValidator(clean_code)
-                is_valid, feedback = validator.validate_static()
-                if is_valid:
-                    is_valid, feedback = validator.validate_runtime()
-            except Exception as e:
-                feedback = str(e)
-                print(f"❌ Phase 2 Error: {e}")
+        previous_attempt_code = clean_code 
+        print(f"🔧 Fixing Code...")
+        
+        fix_role, fix_task = prompts.build_fix_prompt(clean_code, feedback)
+        try:
+            fix_response = ollama.chat(model=MODEL_NAME, messages=[
+                {'role': 'system', 'content': fix_role},
+                {'role': 'user', 'content': fix_task}
+            ])
+            
+            # Log prompts for debugging
+            cognition_snapshot["prompts"].update({
+                f"fix_roles_{attempt_num}": fix_role, 
+                f"fix_task_{attempt_num}": fix_task,
+                f"fix_response_{attempt_num}": fix_response['message']['content']
+            })
+            
+            clean_code = utils.extract_python_code(fix_response['message']['content'])
+            validator = CodeValidator(clean_code)
+            is_valid, feedback = validator.validate_static()
+            if is_valid:
+                is_valid, feedback = validator.validate_runtime()
+                
+        except Exception as e:
+            feedback = str(e)
+            print(f"❌ Phase 2 Retry Error: {e}")
 
     # ---------------------------------------------------------
     # FINAL SAVE & SAFETY NET
