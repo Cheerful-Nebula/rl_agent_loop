@@ -40,7 +40,9 @@ class ExperimentWorkspace:
             "code": self.model_root_path / "generated_code",
             "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
             "tensorboard": self.model_root_path / "telemetry" / "tensorboard",
-            "telemetry_raw": self.model_root_path / "telemetry" / "raw",
+            "telemetry": self.model_root_path / "telemetry",
+            "telemetry_raw": self.model_root_path / "telemetry"/ "raw",
+            "telemetry_training": self.model_root_path / "telemetry" / "training",
             "plots": self.model_root_path / "artifacts" / "plots",
             "models": self.model_root_path / "artifacts" / "models",
             "videos": self.model_root_path / "artifacts" / "videos"

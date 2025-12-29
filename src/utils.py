@@ -11,6 +11,10 @@ import sys
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+from stable_baselines3.common.monitor import Monitor
+# -- Custom IMPORTS --
+from src.wrappers import DynamicRewardWrapper
+from src.config import Config
 # ---------------------------------------------------------
 # FILE OPERATIONS
 # ---------------------------------------------------------
@@ -40,6 +44,22 @@ def load_dynamic_module(module_name, file_path):
         spec.loader.exec_module(module)
         return module
     raise ImportError(f"Could not load module {module_name} from {file_path}")
+# ---------------------------------------------------------
+# ENVIRONMENTS
+# ---------------------------------------------------------
+def make_shaped_env(reward_code_path:str):
+    import gymnasium as gym
+    env = gym.make(Config.ENV_ID)
+    env = DynamicRewardWrapper(env, reward_code_path=str(reward_code_path)) 
+    return Monitor(env)
+
+def make_base_env():
+    import gymnasium as gym
+    env = gym.make(Config.ENV_ID)
+    return Monitor(env)
+
+
+
 # ---------------------------------------------------------
 # SCIENTIFIC LOGGING & ANALYSIS
 # ---------------------------------------------------------

@@ -116,3 +116,107 @@ class ComprehensiveEvalCallback(BaseCallback):
             self.current_episode_fuel = 0.0
             
         return True
+    
+
+
+import os
+import csv
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.evaluation import evaluate_policy
+
+from src.workspace_manager import ExperimentWorkspace
+class FourWayEvalCallback(BaseCallback):
+    def __init__(
+        self,
+        eval_env_base,
+        eval_env_shaped,
+        iteration:int,
+        ws : ExperimentWorkspace,
+        eval_freq: int = 10_000,
+        n_eval_episodes: int = 10,
+        filename: str = "four_way_callback_eval.csv",
+        verbose: int = 1,
+    ):
+        super().__init__(verbose)
+        self.eval_env_base = eval_env_base
+        self.eval_env_shaped = eval_env_shaped
+        self.iteration = iteration
+        self.eval_freq = eval_freq
+        self.n_eval_episodes = n_eval_episodes
+        self.path = os.path.join(ws.dirs['telemetry'],filename)
+        self._last_eval_step = 0
+       
+
+        self._file_exists = os.path.exists(self.path)
+        if not self._file_exists:
+            with open(self.path, "w", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "iteration",
+                    "timestep",
+                    "base_det_mean", "base_det_std",
+                    "base_stoch_mean", "base_stoch_std",
+                    "shaped_det_mean", "shaped_det_std",
+                    "shaped_stoch_mean", "shaped_stoch_std",
+                ])
+
+    def _on_step(self) -> bool:
+        # Called every env step; trigger evaluation every eval_freq timesteps
+        if (self.num_timesteps - self._last_eval_step) >= self.eval_freq:
+            self._last_eval_step = self.num_timesteps
+
+            # Base reward, deterministic
+            mean_base_det, std_base_det = evaluate_policy(
+                self.model,
+                self.eval_env_base,
+                n_eval_episodes=self.n_eval_episodes,
+                deterministic=True,
+                render=False,
+            )
+
+            # Base reward, stochastic
+            mean_base_stoch, std_base_stoch = evaluate_policy(
+                self.model,
+                self.eval_env_base,
+                n_eval_episodes=self.n_eval_episodes,
+                deterministic=False,
+                render=False,
+            )
+
+            # Shaped reward, deterministic
+            mean_shaped_det, std_shaped_det = evaluate_policy(
+                self.model,
+                self.eval_env_shaped,
+                n_eval_episodes=self.n_eval_episodes,
+                deterministic=True,
+                render=False,
+            )
+
+            # Shaped reward, stochastic
+            mean_shaped_stoch, std_shaped_stoch = evaluate_policy(
+                self.model,
+                self.eval_env_shaped,
+                n_eval_episodes=self.n_eval_episodes,
+                deterministic=False,
+                render=False,
+            )
+
+            if self.verbose > 0:
+                print(
+                    f"[FourWayEval] step={self.num_timesteps} | "
+                    f"base det={mean_base_det:.1f}, base stoch={mean_base_stoch:.1f}, "
+                    f"shaped det={mean_shaped_det:.1f}, shaped stoch={mean_shaped_stoch:.1f}"
+                )
+
+            with open(self.path, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    self.iteration,
+                    self.num_timesteps,
+                    mean_base_det, std_base_det,
+                    mean_base_stoch, std_base_stoch,
+                    mean_shaped_det, std_shaped_det,
+                    mean_shaped_stoch, std_shaped_stoch,
+                ])
+
+        return True

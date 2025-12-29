@@ -1,6 +1,7 @@
 import argparse
 import os
 import json
+import csv
 import warnings
 from datetime import datetime
 from stable_baselines3 import PPO
@@ -9,17 +10,21 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import Logger, make_output_format
 from pathlib import Path
+
+import time
+from datetime import timedelta
 # -- Custom IMPORTS --
 from src.workspace_manager import ExperimentWorkspace
 from src import utils
-from src.wrappers import DynamicRewardWrapper
-from src.callbacks import AgenticObservationTracker, ComprehensiveEvalCallback
+from src.callbacks import AgenticObservationTracker, ComprehensiveEvalCallback,FourWayEvalCallback
 from src.evaluation import evaluate_agent
 from src.config import Config # Still used for static settings like ENV_ID
 
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 def run_training_cycle(iteration):
+    start_time = time.perf_counter()
+    print(f"run_training_cycle start time: {start_time}")
     # 1. Initialize Workspace, creates file structure for collected data
     ws = ExperimentWorkspace()
     print(f"🚀 [Iter {iteration}] Initializing Training in: {ws.model_root_path}")
@@ -43,26 +48,34 @@ def run_training_cycle(iteration):
     ppo_params = utils.get_optimized_ppo_params(n_envs, device)
 
     # 4. Create Environment, custom wrapper for injecting new Reward Function
-    def make_env():
-        import gymnasium as gym
-        env = gym.make(Config.ENV_ID)
-        env = DynamicRewardWrapper(env, reward_code_path=str(reward_code_path)) 
-        return Monitor(env)
+    env = make_vec_env(lambda: utils.make_shaped_env(reward_code_path), n_envs=Config.N_ENVS, vec_env_cls=SubprocVecEnv)
+    base_eval_env = utils.make_base_env()
+    shaped_eval_env = utils.make_shaped_env(reward_code_path)
 
-    env = make_vec_env(make_env, n_envs=Config.N_ENVS, vec_env_cls=SubprocVecEnv)
 
     # 5. Grab Paths for saving raw metrics and tensorboards
-    log_dir = ws.dirs["telemetry_raw"] 
+    log_dir = ws.dirs["telemetry_training"] 
     tb_log_dir = str(ws.dirs["tensorboard"])
     suffix = f"_{iteration:03d}"
+
+
     # One subdirectory per iteration for TensorBoard
     tb_log_dir = Path(tb_log_dir) / f"Iter_{iteration:03d}"
     tb_log_dir.mkdir(parents=True, exist_ok=True)
     # Initialize Callbacks
     supervisor_callback = AgenticObservationTracker(obs_indices=[4, 6, 7], save_path=log_dir)
     metrics_callback = ComprehensiveEvalCallback(threshold_score=200)
-
-
+    # Removed Callback for speed for now
+    progress_callback= FourWayEvalCallback(
+        eval_env_base = base_eval_env,
+        eval_env_shaped= shaped_eval_env,
+        iteration = iteration,
+        ws= ws,
+        eval_freq = 100_000,
+        n_eval_episodes= 5,
+        filename = "four_way_callback_eval.csv",
+        verbose= 1,
+    )
     output_formats = [
         # Optional: stdout logging
         # make_output_format("stdout", str(log_dir), suffix),
@@ -95,8 +108,7 @@ def run_training_cycle(iteration):
     # Use formatted string for TB log name
     model.learn(
         total_timesteps=Config.TOTAL_TIMESTEPS, 
-        callback=[supervisor_callback, metrics_callback],
-    #    tb_log_name=f"Iter_{iteration:03d}"
+        callback=[supervisor_callback, metrics_callback,progress_callback]
     )
     
     # 7. Save & Evaluate
@@ -105,7 +117,32 @@ def run_training_cycle(iteration):
     
     print("📊 Running Evaluation...")
 
-    stats = evaluate_agent(model, run_id=iteration, num_episodes=10)
+    # Collect Evaluation Statistics and Merge 
+    json_stats, base_det_stats, shaped_det_stats = evaluate_agent(model, 
+                                                                  iteration=iteration,
+                                                                  deterministic= True,
+                                                                  reward_code_path=reward_code_path, 
+                                                                  num_episodes=10)
+
+    _, base_stoch_stats, shaped_stoch_stats = evaluate_agent(model, 
+                                                             iteration=iteration,
+                                                             deterministic= False,
+                                                             reward_code_path=reward_code_path, 
+                                                             num_episodes=10)
+
+    stats_list = [base_det_stats, base_stoch_stats, shaped_det_stats, shaped_stoch_stats]
+
+    # Create one CSV for final evaluation metrics, each iteration will add 4 rows:
+    # Reward: Shaped vs. Base // Model Predictions: Deterministic vs. Stochastic
+    csv_path = ws.dirs['telemetry'] / "final_eval.csv"
+    # If file doesn't exist, create and write header
+    file_exists = os.path.exists(csv_path)
+    with open(csv_path, "a", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(stats_list[0].keys())
+        for stats in stats_list:
+            writer.writerow(stats.values())
 
     # 7b. CAPTURE TRAINING DYNAMICS (For Survival Analysis and Inferential Statistical Tests post-experiment)    
     training_dynamics = utils.summarize_training_log(tb_log_dir)
@@ -115,14 +152,18 @@ def run_training_cycle(iteration):
         "timestamp": datetime.now().isoformat(),
         "iteration": iteration,
         "config": {"total_timesteps": Config.TOTAL_TIMESTEPS},
-        "performance": stats,
+        "performance": json_stats,
         "training_dynamics": training_dynamics,
         "source_code_path": str(reward_code_path)
     }
     
     # Save the detailed JSON (Raw Data)
     ws.save_metrics(iteration, metrics_payload)
-    
+    end_time = time.perf_counter()
+    elapsed_time = end_time - start_time
+    print(f"run_training_cycle end time: {end_time}")
+    # Format the output using timedelta
+    print(f"Execution took: {timedelta(seconds=elapsed_time)}")
     print(f"✅ Training Cycle Complete. Metrics passed to Controller.")
 
 if __name__ == "__main__":
