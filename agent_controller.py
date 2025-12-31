@@ -11,15 +11,27 @@ from src.workspace_manager import ExperimentWorkspace
 from src.code_validation import CodeValidator
 from src import utils
 from src.config import Config
+from src.llm_utils import (append_chatresponse_row,
+                           add_cognition_call, 
+                           init_cognition_iteration,
+                           save_cognition_iteration,
+                           upsert_model_metadata_row)
+
 
 MODEL_NAME = Config.LLM_MODEL
 MAX_RETRIES = 5 
 
+
+
 def run_agentic_improvement(iteration):
     # 1. Initialize Workspace
     ws = ExperimentWorkspace()
-    print(f"🔵 AGENT (Iter {iteration}): Active in {ws.model_root_path}")
+    cognition_json_path = ws.dirs["cognition_json"] / f"Iter_{iteration:02d}_context_answer.json"
+    cognition_iter = init_cognition_iteration(iteration=iteration, model_name=MODEL_NAME)
+    if iteration == 1:
+        upsert_model_metadata_row(ws.containers["model_metadata"], MODEL_NAME)
     
+    print(f"🔵 AGENT (Iter {iteration}): Active in {ws.model_root_path}")
     # 2. Load Context (The "Eyes" of the Agent)
     # A. Metrics from the run just finished
     metrics = ws.load_metrics(iteration)
@@ -50,7 +62,7 @@ def run_agentic_improvement(iteration):
     # =========================================================
     print("🔵 AGENT: Phase 1 - Diagnosing & Planning...")
     
-    # Build Prompt using our new Clean Builder
+    # Build Prompt using our Prompt Builder
     diag_role, diag_task = prompts.build_diagnosis_prompt(
         metrics=metrics,
         current_code=current_code,
@@ -58,6 +70,9 @@ def run_agentic_improvement(iteration):
         long_term_memory=long_term_memory,
         short_term_history=short_term_history
     )
+    # diag_options = {"temperature": 0.7, "top_p": 0.9, "think": True}
+
+
     # This captures exactly what the LLM saw before it made decisions
     cognition_snapshot = {
         "timestamp": datetime.now().isoformat(),
@@ -73,7 +88,8 @@ def run_agentic_improvement(iteration):
         }
     }
     
-
+    diag_options = None
+    
     try:
         response = ollama.chat(model=MODEL_NAME, messages=[
             {'role': 'system', 'content': diag_role},
@@ -91,6 +107,30 @@ def run_agentic_improvement(iteration):
         print(f"❌ Phase 1 Error: {e}")
         return
 
+    # Save ChatResponse Data to CSV
+    append_chatresponse_row(
+        csv_path =ws.containers['cognition_csv'], 
+        model_name=MODEL_NAME, 
+        response=response,
+        run_id = f"Iter_{iteration:02d}_diag", 
+        iteration=iteration, 
+        phase="Phase_1", 
+        prompt_type="diagnosis",
+        prompt_template_roles="roles/rl_researcher.md",
+        prompt_template_tasks="tasks/diagnose_agent.md",
+        cognition_path=cognition_json_path)
+
+    # Saves full prompts/responses of LLM to JSON, One JSON per iteration
+    add_cognition_call(
+        cognition_iter=cognition_iter,
+        response=response,
+        run_id=f"Iter_{iteration:02d}_diag",
+        phase="diagnosis",
+        system_role=diag_role,
+        user_task=diag_task,
+        options=diag_options,
+        prompt_template_roles="roles/rl_researcher.md",
+        prompt_template_tasks="tasks/diagnose_agent.md")
     # =========================================================
     # PHASE 2: IMPLEMENTATION (WITH SAFETY NET)
     # =========================================================
@@ -115,6 +155,32 @@ def run_agentic_improvement(iteration):
             {'role': 'system', 'content': code_role},
             {'role': 'user', 'content': code_task}
         ])
+        # Save ChatResponse Data to CSV
+        append_chatresponse_row(
+            csv_path =ws.containers['cognition_csv'], 
+            model_name=MODEL_NAME, 
+            response=response2,
+            run_id = f"Iter_{iteration:02d}_code", 
+            iteration=iteration, 
+            phase="Phase_2", 
+            prompt_type="code_generation",
+            prompt_template_roles="roles/python_coder.md",
+            prompt_template_tasks="tasks/implement_plan.md",
+            cognition_path=cognition_json_path)
+
+        # Saves full prompts/responses of LLM to JSON, One JSON per iteration
+        add_cognition_call(
+            cognition_iter=cognition_iter,
+            response=response2,
+            run_id=f"Iter_{iteration:02d}_code",
+            phase="code_generation",
+            system_role=code_role,
+            user_task=code_task,
+            options=None, #diag_options,
+            prompt_template_roles="roles/python_coder.md",
+            prompt_template_tasks="tasks/implement_plan.md")
+        
+        
         clean_code = utils.extract_python_code(response2['message']['content'])
         
         validator = CodeValidator(clean_code)
@@ -155,7 +221,7 @@ def run_agentic_improvement(iteration):
         
         fix_role, fix_task = prompts.build_fix_prompt(clean_code, feedback)
         try:
-            fix_response = ollama.chat(model=MODEL_NAME, messages=[
+            response3 = ollama.chat(model=MODEL_NAME, messages=[
                 {'role': 'system', 'content': fix_role},
                 {'role': 'user', 'content': fix_task}
             ])
@@ -164,10 +230,35 @@ def run_agentic_improvement(iteration):
             cognition_snapshot["prompts"].update({
                 f"fix_roles_{attempt_num}": fix_role, 
                 f"fix_task_{attempt_num}": fix_task,
-                f"fix_response_{attempt_num}": fix_response['message']['content']
+                f"fix_response_{attempt_num}": response3['message']['content']
             })
+            # Save ChatResponse Data to CSV
+            append_chatresponse_row(
+                csv_path =ws.containers['cognition_csv'], 
+                model_name=MODEL_NAME, 
+                response=response3,
+                run_id = f"Iter_{iteration:02d}_code_fix{attempt_num:02d}", 
+                iteration=iteration, 
+                phase="Phase_2", 
+                prompt_type="code_fix",
+                prompt_template_roles="roles/python_coder.md",
+                prompt_template_tasks="tasks/fix_code.md",
+                cognition_path=cognition_json_path)
+
+            # Saves full prompts/responses of LLM to JSON, One JSON per iteration
+            add_cognition_call(
+                cognition_iter=cognition_iter,
+                response=response3,
+                run_id=f"Iter_{iteration:02d}_code_fix{attempt_num:02d}",
+                phase="code_fix",
+                system_role=fix_role,
+                user_task=fix_task,
+                options=None, #diag_options,
+                prompt_template_roles="roles/python_coder.md",
+                prompt_template_tasks="tasks/fix_code.md")
             
-            clean_code = utils.extract_python_code(fix_response['message']['content'])
+
+            clean_code = utils.extract_python_code(response3['message']['content'])
             validator = CodeValidator(clean_code)
             is_valid, feedback = validator.validate_static()
             if is_valid:
@@ -215,6 +306,8 @@ def run_agentic_improvement(iteration):
     utils.update_campaign_summary(ws, iteration, metrics)
     ws.save_metrics(iteration, cognition_snapshot) # Saves as JSON in telemetry/raw
     utils.save_readable_context(ws, iteration, cognition_snapshot['input_context']) # . Save Markdown (For Humans/Debugging) 
+    # Save the per-iteration JSON of LLM cognition
+    save_cognition_iteration(cognition_iter, cognition_json_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

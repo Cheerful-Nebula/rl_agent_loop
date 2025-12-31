@@ -37,6 +37,7 @@ class ExperimentWorkspace:
         self.dirs = {
             "root": self.model_root_path,
             "cognition": self.model_root_path / "cognition",
+            "cognition_json": self.model_root_path / "cognition"/ "prompts_responses",
             "code": self.model_root_path / "generated_code",
             "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
             "tensorboard": self.model_root_path / "telemetry" / "tensorboard",
@@ -51,6 +52,12 @@ class ExperimentWorkspace:
         # 5. BUILD IT
         self._create_directories()
         
+        # 6. Pathes for CSV files of data collected
+        self.containers = {
+            "cognition_csv": self.dirs["cognition"] / "ChatResponse_data.csv",
+            "model_metadata": self.campaign_path  / "models_metadata.csv"
+
+        }
         # Only print this once per run to keep logs clean
         # (You can suppress this if it gets too noisy in the loop)
         # print(f"📍 Workspace Active: {self.model_root_path}")
