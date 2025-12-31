@@ -3,9 +3,15 @@
 # ==========================================
 
 import os
+import csv
 import json
 import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.evaluation import evaluate_policy
+
+
+from src.workspace_manager import ExperimentWorkspace
+
 
 # ==========================================
 # 1. The Supervisor Translator (Quartiles)
@@ -119,19 +125,18 @@ class ComprehensiveEvalCallback(BaseCallback):
     
 
 
-import os
-import csv
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.evaluation import evaluate_policy
 
-from src.workspace_manager import ExperimentWorkspace
 class FourWayEvalCallback(BaseCallback):
+    """
+    Evaluates the agent on 4 configurations (Base/Shaped x Det/Stoch)
+    and logs them in LONG format (Tidy Data) for easier analysis.
+    """
     def __init__(
         self,
         eval_env_base,
         eval_env_shaped,
-        iteration:int,
-        ws : ExperimentWorkspace,
+        iteration: int,
+        ws: ExperimentWorkspace,
         eval_freq: int = 10_000,
         n_eval_episodes: int = 10,
         filename: str = "four_way_callback_eval.csv",
@@ -143,80 +148,73 @@ class FourWayEvalCallback(BaseCallback):
         self.iteration = iteration
         self.eval_freq = eval_freq
         self.n_eval_episodes = n_eval_episodes
-        self.path = os.path.join(ws.dirs['telemetry'],filename)
+        self.path = os.path.join(ws.dirs['telemetry'], filename)
         self._last_eval_step = 0
-       
 
+        # Check if file exists to init headers
         self._file_exists = os.path.exists(self.path)
+        
         if not self._file_exists:
             with open(self.path, "w", newline="") as f:
                 writer = csv.writer(f)
+                # LONG FORMAT HEADERS: Matching final_eval.csv style
                 writer.writerow([
                     "iteration",
                     "timestep",
-                    "base_det_mean", "base_det_std",
-                    "base_stoch_mean", "base_stoch_std",
-                    "shaped_det_mean", "shaped_det_std",
-                    "shaped_stoch_mean", "shaped_stoch_std",
+                    "reward_shape",       # 'Base' or 'Shaped'
+                    "deterministic_flag", # True or False
+                    "mean_reward",
+                    "std_reward"
                 ])
 
     def _on_step(self) -> bool:
-        # Called every env step; trigger evaluation every eval_freq timesteps
         if (self.num_timesteps - self._last_eval_step) >= self.eval_freq:
             self._last_eval_step = self.num_timesteps
 
-            # Base reward, deterministic
-            mean_base_det, std_base_det = evaluate_policy(
-                self.model,
-                self.eval_env_base,
-                n_eval_episodes=self.n_eval_episodes,
-                deterministic=True,
-                render=False,
-            )
+            # Define the 4 configurations to test
+            # Tuples: (Environment, Shape Label, Deterministic Flag)
+            configs = [
+                (self.eval_env_base,   "Base",   True),
+                (self.eval_env_base,   "Base",   False),
+                (self.eval_env_shaped, "Shaped", True),
+                (self.eval_env_shaped, "Shaped", False),
+            ]
 
-            # Base reward, stochastic
-            mean_base_stoch, std_base_stoch = evaluate_policy(
-                self.model,
-                self.eval_env_base,
-                n_eval_episodes=self.n_eval_episodes,
-                deterministic=False,
-                render=False,
-            )
+            results_to_log = []
 
-            # Shaped reward, deterministic
-            mean_shaped_det, std_shaped_det = evaluate_policy(
-                self.model,
-                self.eval_env_shaped,
-                n_eval_episodes=self.n_eval_episodes,
-                deterministic=True,
-                render=False,
-            )
-
-            # Shaped reward, stochastic
-            mean_shaped_stoch, std_shaped_stoch = evaluate_policy(
-                self.model,
-                self.eval_env_shaped,
-                n_eval_episodes=self.n_eval_episodes,
-                deterministic=False,
-                render=False,
-            )
-
-            if self.verbose > 0:
-                print(
-                    f"[FourWayEval] step={self.num_timesteps} | "
-                    f"base det={mean_base_det:.1f}, base stoch={mean_base_stoch:.1f}, "
-                    f"shaped det={mean_shaped_det:.1f}, shaped stoch={mean_shaped_stoch:.1f}"
+            # 1. Run Evaluations
+            for env, shape_label, det_flag in configs:
+                mean_r, std_r = evaluate_policy(
+                    self.model,
+                    env,
+                    n_eval_episodes=self.n_eval_episodes,
+                    deterministic=det_flag,
+                    render=False,
                 )
-
-            with open(self.path, "a", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
+                
+                # Prepare row: Iteration | Step | Shape | Flag | Mean | Std
+                results_to_log.append([
                     self.iteration,
                     self.num_timesteps,
-                    mean_base_det, std_base_det,
-                    mean_base_stoch, std_base_stoch,
-                    mean_shaped_det, std_shaped_det,
-                    mean_shaped_stoch, std_shaped_stoch,
+                    shape_label,
+                    det_flag,
+                    mean_r,
+                    std_r
                 ])
+
+            # 2. Console Logging (Brief Summary)
+            if self.verbose > 0:
+                # Extracting specific scores for clean printing
+                base_det = next(r[4] for r in results_to_log if r[2]=="Base" and r[3])
+                shaped_det = next(r[4] for r in results_to_log if r[2]=="Shaped" and r[3])
+                print(
+                    f"[FourWayEval] step={self.num_timesteps} | "
+                    f"Base(Det): {base_det:.1f} | Shaped(Det): {shaped_det:.1f}"
+                )
+
+            # 3. Write to CSV (Append Mode)
+            with open(self.path, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerows(results_to_log)
 
         return True
