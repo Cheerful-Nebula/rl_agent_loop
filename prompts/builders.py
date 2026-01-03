@@ -42,6 +42,55 @@ def build_diagnosis_prompt(metrics, current_code, training_summary, long_term_me
 
     return system_role, user_task
 
+def build_multi_diagnosis_prompt(config_list, current_code, long_term_memory, short_term_history,training_dynamics)-> tuple[str,str]:
+    """
+    Builds a multi-configuration LLM diagnosis prompt.
+
+    Parameters
+    ----------
+    config_list : list[dict]
+        A list where each element is:
+        {
+            "config_id": str,
+            "meta": {...},
+            "metrics": {...},
+            "diagnostics": {...},
+            "training_summary": {...}
+        }
+        You can include ANY number of configurations.
+    
+    current_code : str
+        Current reward function code.
+    
+    long_term_memory : str
+        Persistent memory summary.
+    
+    short_term_history : str
+        Dialogue or evaluation context.
+    """
+
+    # Load RL Researcher persona
+    system_role = loader.load_template("roles", "rl_researcher")
+
+    # Format the JSON blob for the template
+    import json
+    configuration_json = json.dumps(config_list, indent=4)
+
+    # Load the multi-diagnosis task template
+    task_template = loader.load_template("tasks", "diagnose_agent_multi")
+
+    # Build user task
+    user_task = task_template.format(
+        configuration_json=configuration_json,
+        long_term_memory=long_term_memory,
+        short_term_history=short_term_history,
+        training_dynamics=training_dynamics,
+        current_code=current_code if current_code else "# No previous code"
+    )
+
+    return system_role, user_task
+
+
 def build_coding_prompt(plan, current_code):
     """Constructs prompts for Phase 2 (Implementation)."""
     role = loader.load_template("roles", "python_coder")

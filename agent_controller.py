@@ -15,7 +15,8 @@ from src.llm_utils import (append_chatresponse_row,
                            add_cognition_call, 
                            init_cognition_iteration,
                            save_cognition_iteration,
-                           upsert_model_metadata_row)
+                           upsert_model_metadata_row
+                           )
 
 
 MODEL_NAME = Config.LLM_MODEL
@@ -49,8 +50,8 @@ def run_agentic_improvement(iteration):
         current_code = f.read()
 
     # C. Training Dynamics (Tensorboard Summary)
-    tb_dir = ws.dirs["tensorboard"]
-    training_summary = utils.summarize_training_log(str(tb_dir))
+    logger_dir = ws.dirs["telemetry_raw"]
+    training_summary = utils.summarize_training_log(str(logger_dir))
 
     # D. Long/Short Term Memory
     short_term_history = utils.get_recent_history(ws, iteration)
@@ -63,32 +64,14 @@ def run_agentic_improvement(iteration):
     print("🔵 AGENT: Phase 1 - Diagnosing & Planning...")
     
     # Build Prompt using our Prompt Builder
-    diag_role, diag_task = prompts.build_diagnosis_prompt(
-        metrics=metrics,
+    diag_options = {"temperature": 0.7, "top_p": 0.9, "think": True}
+    diag_role, diag_task = prompts.build_multi_diagnosis_prompt(
+        config_list=metrics,
         current_code=current_code,
-        training_summary=training_summary,
         long_term_memory=long_term_memory,
-        short_term_history=short_term_history
+        short_term_history=short_term_history,
+        training_dynamics=training_summary
     )
-    # diag_options = {"temperature": 0.7, "top_p": 0.9, "think": True}
-
-
-    # This captures exactly what the LLM saw before it made decisions
-    cognition_snapshot = {
-        "timestamp": datetime.now().isoformat(),
-        "iteration": iteration,
-        "input_context": {
-            "metrics": metrics,
-            "training_summary": training_summary,
-            "memory_context": {"short": short_term_history, "long": long_term_memory}
-        },
-        "prompts": {
-            "diagnosis_roles": diag_role,
-            "diagnosis_task": diag_task,
-        }
-    }
-    
-    diag_options = None
     
     try:
         response = ollama.chat(model=MODEL_NAME, messages=[
@@ -96,17 +79,21 @@ def run_agentic_improvement(iteration):
             {'role': 'user', 'content': diag_task}
         ])
         diagnosis_plan = response['message']['content']
+ 
         
-        # Save the plan for human review
-        plan_path = ws.get_path("cognition", iteration, "plan.md")
-        with open(plan_path, "w") as f:
-            f.write(diagnosis_plan)
-        print(f"📝 Plan saved to {plan_path}")
-            
+ 
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
         return
 
+    # Saving input prompts and responses as easy to read Markdown documents for later
+    cognition_list = []
+    cognition_list.append(("diag_role",diag_role))
+    cognition_list.append(("diag_task",diag_task))
+    cognition_list.append(("plan",response['message']['content']))
+    #utils.save_cognition_markdown(ws,iteration, "diag_role", diag_role)
+    #utils.save_cognition_markdown(ws,iteration, "diag_task", diag_task)
+    #utils.save_cognition_markdown(ws,iteration, "plan", response['message']['content'])
     # Save ChatResponse Data to CSV
     append_chatresponse_row(
         csv_path =ws.containers['cognition_csv'], 
@@ -137,12 +124,6 @@ def run_agentic_improvement(iteration):
     print("🔵 AGENT: Phase 2 - Writing Code...")
     
     code_role, code_task = prompts.build_coding_prompt(diagnosis_plan, current_code)
-
-    # adding prompts to cognition snapshot for visability, analysis and debugging later
-    cognition_snapshot["prompts"].update({
-        "code_roles": code_role, 
-        "code_task": code_task
-    })
 
     # Initialize Delta Debugging Trackers / Validation Loop
     previous_attempt_code = current_code
@@ -180,7 +161,13 @@ def run_agentic_improvement(iteration):
             prompt_template_roles="roles/python_coder.md",
             prompt_template_tasks="tasks/implement_plan.md")
         
-        
+        # Saving input prompts and responses as easy to read Markdown documents for later
+        cognition_list.append(("code_role", code_role))
+        cognition_list.append(("code_task", code_task))
+        cognition_list.append(("code_response", response2['message']['content']))
+        #utils.save_cognition_markdown(ws,iteration, "code_role", code_role)
+        #utils.save_cognition_markdown(ws,iteration, "code_task", code_task)
+        #utils.save_cognition_markdown(ws,iteration, "code_response", response2['message']['content'])
         clean_code = utils.extract_python_code(response2['message']['content'])
         
         validator = CodeValidator(clean_code)
@@ -225,13 +212,7 @@ def run_agentic_improvement(iteration):
                 {'role': 'system', 'content': fix_role},
                 {'role': 'user', 'content': fix_task}
             ])
-            
-            # Log prompts for debugging
-            cognition_snapshot["prompts"].update({
-                f"fix_roles_{attempt_num}": fix_role, 
-                f"fix_task_{attempt_num}": fix_task,
-                f"fix_response_{attempt_num}": response3['message']['content']
-            })
+
             # Save ChatResponse Data to CSV
             append_chatresponse_row(
                 csv_path =ws.containers['cognition_csv'], 
@@ -256,8 +237,13 @@ def run_agentic_improvement(iteration):
                 options=None, #diag_options,
                 prompt_template_roles="roles/python_coder.md",
                 prompt_template_tasks="tasks/fix_code.md")
-            
-
+            # Saving input prompts and responses as easy to read Markdown documents for later
+            cognition_list.append((f"fix_role_attempt{attempt_num:02d}", fix_role))
+            cognition_list.append((f"fix_task_attempt{attempt_num:02d}", fix_task))    
+            cognition_list.append(("fix_response", response3['message']['content']))
+            #utils.save_cognition_markdown(ws,iteration, f"fix_role_attempt{attempt_num:02d}", fix_role)
+            #utils.save_cognition_markdown(ws,iteration, f"fix_task_attempt{attempt_num:02d}", fix_task)
+            #utils.save_cognition_markdown(ws,iteration, "fix_response", response3['message']['content'])
             clean_code = utils.extract_python_code(response3['message']['content'])
             validator = CodeValidator(clean_code)
             is_valid, feedback = validator.validate_static()
@@ -275,15 +261,15 @@ def run_agentic_improvement(iteration):
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     generation_status = "success"
     if is_valid:
-            # SUCCESS: Save the new evolution
-            header = f"# Generated by {MODEL_NAME} (Iter {iteration}) on {timestamp_str}\n"
-            final_content = header + clean_code
-            print(f"✅ Code validated and saved.")
-            
-            # [EVOLUTION]: Save the Diff vs Previous Iteration
-            patch_path = ws.get_path("code", iteration, "changes.patch")
-            with open(patch_path, "w") as f:
-                f.write(utils.generate_patch(current_code, clean_code, "reward.py"))
+        # SUCCESS: Save the new evolution
+        header = f"# Generated by {MODEL_NAME} (Iter {iteration}) on {timestamp_str}\n"
+        final_content = header + clean_code
+        print(f"✅ Code validated and saved.")
+        
+        # [EVOLUTION]: Save the Diff vs Previous Iteration
+        patch_path = ws.get_path("code", iteration, "changes.patch")
+        with open(patch_path, "w") as f:
+            f.write(utils.generate_patch(current_code, clean_code, "reward.py"))
                 
     else:
         # FAILURE: Engage Safety Net
@@ -303,9 +289,8 @@ def run_agentic_improvement(iteration):
     # ---------------------------------------------------------
     # Inject status into metrics for the CSV
     metrics["generation_status"] = generation_status
-    utils.update_campaign_summary(ws, iteration, metrics)
-    ws.save_metrics(iteration, cognition_snapshot) # Saves as JSON in telemetry/raw
-    utils.save_readable_context(ws, iteration, cognition_snapshot['input_context']) # . Save Markdown (For Humans/Debugging) 
+    # Save cognition history in easy read markdown documents 
+    utils.save_cognition_markdown(ws,iteration, cognition_list)
     # Save the per-iteration JSON of LLM cognition
     save_cognition_iteration(cognition_iter, cognition_json_path)
 

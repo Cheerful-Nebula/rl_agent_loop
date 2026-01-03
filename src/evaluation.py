@@ -13,9 +13,11 @@ from src import utils
 from src.workspace_manager import ExperimentWorkspace
 
 def summarize_eval(iteration: int,stats: dict, tracker : PositionTracker) -> dict:
+    policy_label= "Deterministic" if stats['deterministic_flag'] else "Stochastic"
     final_stats = {"Iteration":iteration,
         "deterministic_flag": stats["deterministic_flag"],
         "reward_shape": stats["reward_shape"],
+        "config_id" :f"{policy_label}Policy_{stats["reward_shape"]}Reward",
         # Standard Metrics 
         "mean_reward": stats["mean_reward"],
         "std_reward": stats["std_reward"],
@@ -119,34 +121,9 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
 
     # --- MERGE & RETURN ---
     # We prefix keys to distinguish them in the CSV
-    json_stats = {
-        # Standard Metrics (Keep these as the "main" ones for backward compatibility)
-        "mean_reward": std_stats["mean_reward"],
-        "std_reward": std_stats["std_reward"],
-        "mean_ep_length": std_stats["mean_len"],
-        "reward_success_rate": std_stats["success_rate"],
-        "position_success_rate": std_stats["pos_success_rate"],
-        "crash_rate": std_stats["crash_rate"],
-        "raw_episode_lengths": std_stats["raw_lengths"], # For Survival Analysis (Kaplan-Meier)
-        "raw_outcomes": std_stats["raw_outcomes"],
-
-        # Shaped Metrics (New)
-        "shaped_mean_reward": shp_stats.get("mean_reward", 0.0),
-        "shaped_success_rate": shp_stats.get("success_rate", 0.0),
-
-        # Diagnostics (From Standard Pass)
-        "diagnostics": {
-            "avg_x_position": float(std_tracker.rollout_pts_agg[0]['avg']),
-            "avg_descent_velocity": float(std_tracker.rollout_pts_agg[3]['avg']),
-            "avg_tilt_angle": float(std_tracker.rollout_pts_agg[4]['avg']),
-            "vertical_stability_index": float(std_tracker.get_episode_metrics()[3]['std_dev']),
-            "horizontal_stability_index": float(std_tracker.get_episode_metrics()[0]['std_dev'])
-        }
-    }
-
     base_stats = summarize_eval(iteration,std_stats,std_tracker)
 
     shaped_stats = summarize_eval(iteration,shp_stats, shp_tracker)
 
 
-    return json_stats, base_stats, shaped_stats
+    return  base_stats, shaped_stats

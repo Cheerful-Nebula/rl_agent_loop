@@ -54,7 +54,7 @@ def run_training_cycle(iteration):
 
 
     # 5. Grab Paths for saving raw metrics and tensorboards
-    log_dir = ws.dirs["telemetry_training"] 
+    logger_dir = ws.dirs["telemetry_training"] 
     tb_log_dir = str(ws.dirs["tensorboard"])
     suffix = f"_{iteration:03d}"
 
@@ -63,7 +63,7 @@ def run_training_cycle(iteration):
     tb_log_dir = Path(tb_log_dir) / f"Iter_{iteration:03d}"
     tb_log_dir.mkdir(parents=True, exist_ok=True)
     # Initialize Callbacks
-    supervisor_callback = AgenticObservationTracker(obs_indices=[4, 6, 7], save_path=log_dir)
+    supervisor_callback = AgenticObservationTracker(obs_indices=[4, 6, 7], save_path=logger_dir)
     metrics_callback = ComprehensiveEvalCallback(threshold_score=200)
     # Removed Callback for speed for now
     progress_callback= FourWayEvalCallback(
@@ -71,22 +71,22 @@ def run_training_cycle(iteration):
         eval_env_shaped= shaped_eval_env,
         iteration = iteration,
         ws= ws,
-        eval_freq = 100_000,
+        eval_freq = 100000,
         n_eval_episodes= 5,
         filename = "four_way_callback_eval.csv",
         verbose= 1,
     )
     output_formats = [
         # Optional: stdout logging
-        # make_output_format("stdout", str(log_dir), suffix),
+        make_output_format("stdout", str(logger_dir), suffix),
 
         # Per-iteration CSV: telemetry_raw/progress_XXX.csv
-        make_output_format("csv",        str(log_dir), suffix),
+        make_output_format("csv",        str(logger_dir), suffix),
 
         # Per-iteration TensorBoard events: tensorboard/Iter_XXX/events.out.tfevents...
         make_output_format("tensorboard", str(tb_log_dir), ""),
     ]
-    logger = Logger(folder=str(log_dir), output_formats=output_formats)
+    logger = Logger(folder=str(logger_dir), output_formats=output_formats)
 
     # 6. Train
     print(f"🏋️ Training on {device}...")
@@ -118,13 +118,13 @@ def run_training_cycle(iteration):
     print("📊 Running Evaluation...")
 
     # Collect Evaluation Statistics and Merge 
-    json_stats, base_det_stats, shaped_det_stats = evaluate_agent(model, 
-                                                                  iteration=iteration,
-                                                                  deterministic= True,
-                                                                  reward_code_path=reward_code_path, 
-                                                                  num_episodes=10)
+    base_det_stats, shaped_det_stats = evaluate_agent(model, 
+                                                        iteration=iteration,
+                                                        deterministic= True,
+                                                        reward_code_path=reward_code_path, 
+                                                        num_episodes=10)
 
-    _, base_stoch_stats, shaped_stoch_stats = evaluate_agent(model, 
+    base_stoch_stats, shaped_stoch_stats = evaluate_agent(model, 
                                                              iteration=iteration,
                                                              deterministic= False,
                                                              reward_code_path=reward_code_path, 
@@ -135,7 +135,6 @@ def run_training_cycle(iteration):
     # Create one CSV for final evaluation metrics, each iteration will add 4 rows:
     # Reward: Shaped vs. Base // Model Predictions: Deterministic vs. Stochastic
     csv_path = ws.dirs['telemetry'] / "final_eval.csv"
-    # If file doesn't exist, create and write header
     file_exists = os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:
         writer = csv.writer(f)
@@ -145,14 +144,20 @@ def run_training_cycle(iteration):
             writer.writerow(stats.values())
 
     # 7b. CAPTURE TRAINING DYNAMICS (For Survival Analysis and Inferential Statistical Tests post-experiment)    
-    training_dynamics = utils.summarize_training_log(tb_log_dir)
+    training_dynamics = utils.summarize_training_log(logger_dir)
 
-    # 8. Handoff to Controller (Save Metrics)
+    # Prepare Evaluation Data for handoff to the controller analyst
+    for stats in stats_list:
+        del stats['deterministic_flag']
+        del stats['reward_shape']
+        del stats['Iteration']    
+
+    # 8. Data that will be given to controller analyst
     metrics_payload = {
         "timestamp": datetime.now().isoformat(),
         "iteration": iteration,
         "config": {"total_timesteps": Config.TOTAL_TIMESTEPS},
-        "performance": json_stats,
+        "performance": stats_list,
         "training_dynamics": training_dynamics,
         "source_code_path": str(reward_code_path)
     }

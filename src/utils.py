@@ -12,9 +12,11 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from stable_baselines3.common.monitor import Monitor
+from typing import Tuple
 # -- Custom IMPORTS --
 from src.wrappers import DynamicRewardWrapper
 from src.config import Config
+from src.workspace_manager import ExperimentWorkspace
 # ---------------------------------------------------------
 # FILE OPERATIONS
 # ---------------------------------------------------------
@@ -44,6 +46,25 @@ def load_dynamic_module(module_name, file_path):
         spec.loader.exec_module(module)
         return module
     raise ImportError(f"Could not load module {module_name} from {file_path}")
+
+def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:list[Tuple]):
+        # Save the plan for human review
+        plan_path = ws.get_path("cognition", iteration, "cognition_record.md")
+        final_content = f"# Cognition prompts and calls: Iteration:{iteration}\n\n"
+        for filename, prompt_obj in cognition_list:
+            final_content += "*"*25 +f"\n"+ f"#filename" +f"\n"+ "*"*25 + f"\n\n"
+            final_content += prompt_obj + f"\n\n"
+
+        with open(plan_path, "w") as f:
+            f.write(final_content)
+        print(f"📝 Plan saved to {plan_path}") 
+
+def save_cognition_markdown_2(ws: ExperimentWorkspace,iteration, filename:str, prompt_obj:str):
+        # Save the plan for human review
+        plan_path = ws.get_path("cognition", iteration, f"{filename}.md")
+        with open(plan_path, "w") as f:
+            f.write(prompt_obj)
+        print(f"📝 Plan saved to {plan_path}") 
 # ---------------------------------------------------------
 # ENVIRONMENTS
 # ---------------------------------------------------------
@@ -162,9 +183,9 @@ def save_readable_context(workspace, iteration, context_dict):
         f.write(md_content)
     print(f"🧠 Context report saved: {md_path}")
 
-def summarize_training_log(log_dir): 
+def summarize_training_log(iteration: int,log_dir): 
     """ Reads SB3 progress.json. Returns Strings for LLM, Floats for CSV. """ 
-    log_path = os.path.join(log_dir, "progress.json") 
+    log_path = os.path.join(log_dir, f"progress_{iteration:03d}.csv") 
     if not os.path.exists(log_path): return {"error": "No training log."}
     data = []
     try:
