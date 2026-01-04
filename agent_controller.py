@@ -27,7 +27,7 @@ MAX_RETRIES = 5
 def run_agentic_improvement(iteration):
     # 1. Initialize Workspace
     ws = ExperimentWorkspace()
-    cognition_json_path = ws.dirs["cognition_json"] / f"Iter_{iteration:02d}_context_answer.json"
+    cognition_json_path = ws.get_path("cognition_json", iteration, "cognition_record.json")
     cognition_iter = init_cognition_iteration(iteration=iteration, model_name=MODEL_NAME)
     if iteration == 1:
         upsert_model_metadata_row(ws.containers["model_metadata"], MODEL_NAME)
@@ -51,7 +51,7 @@ def run_agentic_improvement(iteration):
 
     # C. Training Dynamics (Tensorboard Summary)
     logger_dir = ws.dirs["telemetry_raw"]
-    training_summary = utils.summarize_training_log(str(logger_dir))
+    #training_summary = utils.summarize_training_log(str(logger_dir))
 
     # D. Long/Short Term Memory
     short_term_history = utils.get_recent_history(ws, iteration)
@@ -65,12 +65,11 @@ def run_agentic_improvement(iteration):
     
     # Build Prompt using our Prompt Builder
     diag_options = {"temperature": 0.7, "top_p": 0.9, "think": True}
-    diag_role, diag_task = prompts.build_multi_diagnosis_prompt(
+    diag_role, diag_task = prompts.build_diagnosis_prompt(
         config_list=metrics,
         current_code=current_code,
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
-        training_dynamics=training_summary
     )
     
     try:
@@ -88,12 +87,10 @@ def run_agentic_improvement(iteration):
 
     # Saving input prompts and responses as easy to read Markdown documents for later
     cognition_list = []
-    cognition_list.append(("diag_role",diag_role))
-    cognition_list.append(("diag_task",diag_task))
-    cognition_list.append(("plan",response['message']['content']))
-    #utils.save_cognition_markdown(ws,iteration, "diag_role", diag_role)
-    #utils.save_cognition_markdown(ws,iteration, "diag_task", diag_task)
-    #utils.save_cognition_markdown(ws,iteration, "plan", response['message']['content'])
+    cognition_list.append(("LLM Input: diag_role from `prompts.build_multi_diagnosis_prompt`",diag_role))
+    cognition_list.append(("LLM Input: diag_task from `prompts.build_multi_diagnosis_prompt`",diag_task))
+    cognition_list.append(("LLM Output: plan",response['message']['content']))
+
     # Save ChatResponse Data to CSV
     append_chatresponse_row(
         csv_path =ws.containers['cognition_csv'], 
@@ -103,8 +100,8 @@ def run_agentic_improvement(iteration):
         iteration=iteration, 
         phase="Phase_1", 
         prompt_type="diagnosis",
-        prompt_template_roles="roles/rl_researcher.md",
-        prompt_template_tasks="tasks/diagnose_agent.md",
+        prompt_template_roles="roles/analyst/rl_researcher.md",
+        prompt_template_tasks="tasks/analyze/diagnose_agent.md",
         cognition_path=cognition_json_path)
 
     # Saves full prompts/responses of LLM to JSON, One JSON per iteration
@@ -116,8 +113,8 @@ def run_agentic_improvement(iteration):
         system_role=diag_role,
         user_task=diag_task,
         options=diag_options,
-        prompt_template_roles="roles/rl_researcher.md",
-        prompt_template_tasks="tasks/diagnose_agent.md")
+        prompt_template_roles="roles/analyst/rl_researcher.md",
+        prompt_template_tasks="tasks/analyze/diagnose_agent.md")
     # =========================================================
     # PHASE 2: IMPLEMENTATION (WITH SAFETY NET)
     # =========================================================
@@ -145,8 +142,8 @@ def run_agentic_improvement(iteration):
             iteration=iteration, 
             phase="Phase_2", 
             prompt_type="code_generation",
-            prompt_template_roles="roles/python_coder.md",
-            prompt_template_tasks="tasks/implement_plan.md",
+            prompt_template_roles="roles/coder/python_coder.md",
+            prompt_template_tasks="tasks/code_generation/implement_plan.md",
             cognition_path=cognition_json_path)
 
         # Saves full prompts/responses of LLM to JSON, One JSON per iteration
@@ -158,16 +155,14 @@ def run_agentic_improvement(iteration):
             system_role=code_role,
             user_task=code_task,
             options=None, #diag_options,
-            prompt_template_roles="roles/python_coder.md",
-            prompt_template_tasks="tasks/implement_plan.md")
-        
+            prompt_template_roles="roles/coder/python_coder.md",
+            prompt_template_tasks="tasks/code_generation/implement_plan.md")
+
         # Saving input prompts and responses as easy to read Markdown documents for later
-        cognition_list.append(("code_role", code_role))
-        cognition_list.append(("code_task", code_task))
-        cognition_list.append(("code_response", response2['message']['content']))
-        #utils.save_cognition_markdown(ws,iteration, "code_role", code_role)
-        #utils.save_cognition_markdown(ws,iteration, "code_task", code_task)
-        #utils.save_cognition_markdown(ws,iteration, "code_response", response2['message']['content'])
+        cognition_list.append(("LLM Input: code_role from `prompts.build_coding_prompt`", code_role))
+        cognition_list.append(("LLM Input: code_task from `prompts.build_coding_prompt`", code_task))
+        cognition_list.append(("LLM Output: code_response", response2['message']['content']))
+
         clean_code = utils.extract_python_code(response2['message']['content'])
         
         validator = CodeValidator(clean_code)
@@ -238,12 +233,10 @@ def run_agentic_improvement(iteration):
                 prompt_template_roles="roles/python_coder.md",
                 prompt_template_tasks="tasks/fix_code.md")
             # Saving input prompts and responses as easy to read Markdown documents for later
-            cognition_list.append((f"fix_role_attempt{attempt_num:02d}", fix_role))
-            cognition_list.append((f"fix_task_attempt{attempt_num:02d}", fix_task))    
-            cognition_list.append(("fix_response", response3['message']['content']))
-            #utils.save_cognition_markdown(ws,iteration, f"fix_role_attempt{attempt_num:02d}", fix_role)
-            #utils.save_cognition_markdown(ws,iteration, f"fix_task_attempt{attempt_num:02d}", fix_task)
-            #utils.save_cognition_markdown(ws,iteration, "fix_response", response3['message']['content'])
+            cognition_list.append((f"LLM Input: fix_role_attempt{attempt_num:02d} from `prompts.build_fix_prompt`", fix_role))
+            cognition_list.append((f"LLM Input: fix_task_attempt{attempt_num:02d} from `prompts.build_fix_prompt`", fix_task))    
+            cognition_list.append(("LLM Output: fix_response", response3['message']['content']))
+
             clean_code = utils.extract_python_code(response3['message']['content'])
             validator = CodeValidator(clean_code)
             is_valid, feedback = validator.validate_static()
