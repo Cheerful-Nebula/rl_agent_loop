@@ -73,7 +73,7 @@ class AgenticObservationTracker(BaseCallback):
         self.outcomes = {"trunc": 0, "term": 0}
 
 # ==========================================
-# 2. The Performance Evaluator (Scores/Fuel)
+# 2. The Performance Evaluators (Scores/Fuel)
 # ==========================================
 class ComprehensiveEvalCallback(BaseCallback):
     """
@@ -218,3 +218,38 @@ class FourWayEvalCallback(BaseCallback):
                 writer.writerows(results_to_log)
 
         return True
+
+# ==========================================
+# 2. The Entropy Scheduler (Exploration)
+# ==========================================
+class EntropyScheduleCallback(BaseCallback):
+    def __init__(self, initial_ent_coef: float, final_ent_coef: float, total_timesteps: int, verbose=0):
+        super().__init__(verbose)
+        self.initial_ent_coef = initial_ent_coef
+        self.final_ent_coef = final_ent_coef
+        self.total_timesteps = total_timesteps
+
+    def _on_step(self) -> bool:
+        # 1. Calculate "progress_remaining" (1.0 starts, 0.0 ends)
+        # SB3 tracks num_timesteps internally
+        progress = 1.0 - (self.num_timesteps / self.total_timesteps)
+        
+        # 2. Calculate current entropy value (Linear decay example)
+        current_ent_coef = self.final_ent_coef + (self.initial_ent_coef - self.final_ent_coef) * progress
+        
+        # 3. Inject the new value directly into the model
+        # For PPO/A2C, this attribute controls the loss calculation
+        self.model.ent_coef = current_ent_coef
+        
+        # Optional: Log it to TensorBoard so you can verify it's changing
+        self.logger.record("train/ent_coef", current_ent_coef)
+        
+        return True
+    # --- Usage ---
+# 1. Define the callback (e.g., decay from 0.1 down to 0.001)
+# entropy_callback = EntropyScheduleCallback(initial_ent_coef=0.1, final_ent_coef=0.001)
+
+# model = PPO("MlpPolicy", "CartPole-v1", verbose=1, ent_coef=0.1) # Initial value here matters less as callback overwrites it
+
+# 2. Pass the callback to learn()
+# model.learn(total_timesteps=50000, callback=entropy_callback)
