@@ -16,7 +16,7 @@ from datetime import timedelta
 # -- Custom IMPORTS --
 from src.workspace_manager import ExperimentWorkspace
 from src import utils
-from src.callbacks import AgenticObservationTracker, ComprehensiveEvalCallback,FourWayEvalCallback
+from src.callbacks import AgenticObservationTracker, ComprehensiveEvalCallback,FourWayEvalCallback,EntropyScheduleCallback
 from src.evaluation import evaluate_agent
 from src.config import Config # Still used for static settings like ENV_ID
 
@@ -56,7 +56,7 @@ def run_training_cycle(iteration):
     # 5. Grab Paths for saving raw metrics and tensorboards
     logger_dir = ws.dirs["telemetry_training"] 
     tb_log_dir = str(ws.dirs["tensorboard"])
-    suffix = f"_{iteration:03d}"
+    suffix = f"_{iteration:02d}"
 
 
     # One subdirectory per iteration for TensorBoard
@@ -65,7 +65,7 @@ def run_training_cycle(iteration):
     # Initialize Callbacks
     supervisor_callback = AgenticObservationTracker(obs_indices=[4, 6, 7], save_path=logger_dir)
     metrics_callback = ComprehensiveEvalCallback(threshold_score=200)
-    # Removed Callback for speed for now
+    entropy_callback = EntropyScheduleCallback(initial_ent_coef=0.1, final_ent_coef=0.00001, total_timesteps = Config.TOTAL_TIMESTEPS)
     progress_callback= FourWayEvalCallback(
         eval_env_base = base_eval_env,
         eval_env_shaped= shaped_eval_env,
@@ -88,6 +88,7 @@ def run_training_cycle(iteration):
     ]
     logger = Logger(folder=str(logger_dir), output_formats=output_formats)
 
+    lr_schedule = utils.linear_schedule(1e-3, 3e-4)
     # 6. Train
     print(f"🏋️ Training on {device}...")
     model = PPO(
@@ -96,11 +97,11 @@ def run_training_cycle(iteration):
         device=ppo_params['device'],
         n_steps=ppo_params['n_steps'],                   
         batch_size=ppo_params['batch_size'],
-        #tensorboard_log=tb_log_dir,
+        learning_rate=lr_schedule,
         n_epochs=10,
         gamma=0.999,
         gae_lambda=0.98,
-        ent_coef=0.01,
+        ent_coef=0.03,
         verbose=0
     )
     print(f"Model training with n_steps: {ppo_params['n_steps']}, batch_size: {ppo_params['batch_size']}")
@@ -108,7 +109,7 @@ def run_training_cycle(iteration):
     # Use formatted string for TB log name
     model.learn(
         total_timesteps=Config.TOTAL_TIMESTEPS, 
-        callback=[supervisor_callback, metrics_callback,progress_callback]
+        callback=[supervisor_callback, metrics_callback,progress_callback,entropy_callback]
     )
     
     # 7. Save & Evaluate
@@ -131,6 +132,12 @@ def run_training_cycle(iteration):
                                                              num_episodes=10)
 
     stats_list = [base_det_stats, base_stoch_stats, shaped_det_stats, shaped_stoch_stats]
+    # Prepare Evaluation Data for handoff to the controller analyst
+    for stats in stats_list:
+        del stats['deterministic_flag']
+        del stats['reward_shape']
+        del stats['Iteration']   
+
 
     # Create one CSV for final evaluation metrics, each iteration will add 4 rows:
     # Reward: Shaped vs. Base // Model Predictions: Deterministic vs. Stochastic
@@ -144,13 +151,9 @@ def run_training_cycle(iteration):
             writer.writerow(stats.values())
 
     # 7b. CAPTURE TRAINING DYNAMICS (For Survival Analysis and Inferential Statistical Tests post-experiment)    
-    training_dynamics = utils.summarize_training_log(logger_dir)
+    training_dynamics = utils.summarize_training_log(ws, iteration)
 
-    # Prepare Evaluation Data for handoff to the controller analyst
-    for stats in stats_list:
-        del stats['deterministic_flag']
-        del stats['reward_shape']
-        del stats['Iteration']    
+ 
 
     # 8. Data that will be given to controller analyst
     metrics_payload = {
