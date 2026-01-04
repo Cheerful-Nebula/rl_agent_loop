@@ -37,7 +37,8 @@ class ExperimentWorkspace:
         self.dirs = {
             "root": self.model_root_path,
             "cognition": self.model_root_path / "cognition",
-            "cognition_json": self.model_root_path / "cognition"/ "prompts_responses",
+            "cognition_json": self.model_root_path / "cognition"/ "json_cognition_records",
+            "cognition_markdown": self.model_root_path / "cognition"/ "markdown_cognition_records",
             "code": self.model_root_path / "generated_code",
             "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
             "tensorboard": self.model_root_path / "telemetry" / "tensorboard",
@@ -52,7 +53,7 @@ class ExperimentWorkspace:
         # 5. BUILD IT
         self._create_directories()
         
-        # 6. Pathes for CSV files of data collected
+        # 6. Pathes for CSV files of data collected that do not need iteration number in filename
         self.containers = {
             "cognition_csv": self.dirs["cognition"] / "ChatResponse_data.csv",
             "model_metadata": self.campaign_path  / "models_metadata.csv"
