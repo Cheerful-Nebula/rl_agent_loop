@@ -13,6 +13,7 @@ from pathlib import Path
 from datetime import datetime
 from stable_baselines3.common.monitor import Monitor
 from typing import Tuple
+import pandas as pd
 # -- Custom IMPORTS --
 from src.wrappers import DynamicRewardWrapper
 from src.config import Config
@@ -49,22 +50,18 @@ def load_dynamic_module(module_name, file_path):
 
 def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:list[Tuple]):
         # Save the plan for human review
-        plan_path = ws.get_path("cognition", iteration, "cognition_record.md")
+        plan_path = ws.get_path("cognition_markdown", iteration, "cognition_record.md")
         final_content = f"# Cognition prompts and calls: Iteration:{iteration}\n\n"
         for filename, prompt_obj in cognition_list:
-            final_content += "*"*25 +f"\n"+ f"#filename" +f"\n"+ "*"*25 + f"\n\n"
+            final_content += "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
+            final_content += f"# {filename}"
+            final_content += f"\n"+ "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
             final_content += prompt_obj + f"\n\n"
 
         with open(plan_path, "w") as f:
             f.write(final_content)
         print(f"📝 Plan saved to {plan_path}") 
 
-def save_cognition_markdown_2(ws: ExperimentWorkspace,iteration, filename:str, prompt_obj:str):
-        # Save the plan for human review
-        plan_path = ws.get_path("cognition", iteration, f"{filename}.md")
-        with open(plan_path, "w") as f:
-            f.write(prompt_obj)
-        print(f"📝 Plan saved to {plan_path}") 
 # ---------------------------------------------------------
 # ENVIRONMENTS
 # ---------------------------------------------------------
@@ -138,81 +135,55 @@ def update_campaign_summary(ws, iteration, metrics):
         
     print(f"📈 Campaign Summary updated: {csv_path}")
 
-def save_readable_context(workspace, iteration, context_dict):
-    """
-    Converts the raw context dictionary into a beautiful Markdown file 
-    for human debugging.
-    """
-    metrics = context_dict.get('metrics', {})
-    training = context_dict.get('training_summary', {})
-    memory = context_dict.get('memory_context', {})
-    prompts = context_dict.get('prompts', {})
 
-    md_content = f"""# Iteration {iteration} Context Report
-**Timestamp:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-## 1. The "Eyes" (Incoming Data)
-### Performance Metrics
-| Metric | Value |
-| :--- | :--- |
-| Mean Reward | {metrics.get('performance', {}).get('mean_reward', 'N/A')} |
-| Reward Success Rate | {metrics.get('performance', {}).get('reward_success_rate', 'N/A')} |
-| Position Success Rate | {metrics.get('performance', {}).get('position_success_rate', 'N/A')} |
-| Crash Rate | {metrics.get('performance', {}).get('crash_rate', 'N/A')} |
-
-### Training Dynamics
-- **Entropy:** {training.get('entropy_start')} -> {training.get('entropy_end')}
-- **Value Loss:** {training.get('value_loss_avg')}
-
-## 2. The "Memory"
-### Short Term
-```text
-{memory.get('short', 'No history')}
-```
-### Long Term
-```text
-{memory.get('long', 'No history')}
-```
-## 3. The Prompts Sent
-### Diagnosis Prompt
-```text
-{prompts.get('diagnosis_task', 'N/A')}
-```"""
-    md_path = workspace.get_path("cognition", iteration, "context_report.md")
-    with open(md_path, "w") as f:
-        f.write(md_content)
-    print(f"🧠 Context report saved: {md_path}")
-
-def summarize_training_log(iteration: int,log_dir): 
-    """ Reads SB3 progress.json. Returns Strings for LLM, Floats for CSV. """ 
-    log_path = os.path.join(log_dir, f"progress_{iteration:03d}.csv") 
-    if not os.path.exists(log_path): return {"error": "No training log."}
-    data = []
-    try:
-        with open(log_path, 'r') as f:
-            for line in f:
-                if line.strip(): data.append(json.loads(line))
-    except: return {"error": "Parse error."}
-
-    if not data: return {"error": "Empty log."}
-
-    first, last = data[0], data[-1]
-    val_loss_avg = np.mean([d.get('train/value_loss', 0) for d in data])
-
-    return {
-        # Strings for LLM
-        "entropy_start": f"{first.get('train/entropy_loss', 0):.4f}",
-        "entropy_end": f"{last.get('train/entropy_loss', 0):.4f}",
-        "entropy_trend": "Collapsing" if last.get('train/entropy_loss', 0) < -1.0 else "Stable",
-        "value_loss_avg": f"{val_loss_avg:.4f}",
-        "policy_loss_end": f"{last.get('train/policy_gradient_loss', 0):.4f}",
-        
-        # Raw Floats for CSV
-        "raw_train_reward": float(last.get('rollout/ep_rew_mean', 0)),
-        "raw_entropy": float(last.get('train/entropy_loss', 0)),
-        "raw_value_loss": float(val_loss_avg),
-        "raw_policy_loss": float(last.get('train/policy_gradient_loss', 0))
+def summarize_training_log(ws: ExperimentWorkspace, iteration: int)-> json:
+   log_path =  ws.dirs["telemetry_training"] / f"progress_{iteration:02d}.csv"
+   df = pd.read_csv(log_path)
+   training_summary= {
+    "policy_gradient_loss": {"start": df['train/policy_gradient_loss'].iloc[1].round(4),
+                             "median": df['train/policy_gradient_loss'].median().round(4),
+                             "mean": df['train/policy_gradient_loss'].mean().round(4),
+                             "end": df['train/policy_gradient_loss'].iloc[-1].round(4)},
+    "approx_kl": {"start": df['train/approx_kl'].iloc[1].round(4),
+                  "median": df['train/approx_kl'].median().round(4),
+                  "mean": df['train/approx_kl'].mean().round(4),
+                  "end": df['train/approx_kl'].iloc[-1].round(4)},
+    "loss": {"start": df['train/loss'].iloc[1].round(4),
+             "median": df['train/loss'].median().round(4),
+             "mean": df['train/loss'].mean().round(4),
+             "end": df['train/loss'].iloc[-1].round(4)},
+    "explained_variance": {"start": df['train/explained_variance'].iloc[1].round(4),
+                           "median": df['train/explained_variance'].median().round(4),
+                           "mean": df['train/explained_variance'].mean().round(4),
+                           "end": df['train/explained_variance'].iloc[-1].round(4)},
+    "clip_range": {"start": df['train/clip_range'].iloc[1].round(4),
+                   "median": df['train/clip_range'].median().round(4),
+                   "mean": df['train/clip_range'].mean().round(4),
+                   "end": df['train/clip_range'].iloc[-1].round(4)},    
+    "entropy_loss": {"start": df['train/entropy_loss'].iloc[1].round(4),
+                     "median": df['train/entropy_loss'].median().round(4),
+                     "mean": df['train/entropy_loss'].mean().round(4),
+                     "end": df['train/entropy_loss'].iloc[-1].round(4)},
+    "value_loss": {"start": df['train/value_loss'].iloc[1].round(4),
+                   "median": df['train/value_loss'].median().round(4),
+                   "mean": df['train/value_loss'].mean().round(4),
+                   "end": df['train/value_loss'].iloc[-1].round(4)},
+    "clip_fraction": {"start": df['train/clip_fraction'].iloc[1].round(4),
+                      "median": df['train/clip_fraction'].median().round(4),
+                      "mean": df['train/clip_fraction'].mean().round(4),
+                      "end": df['train/clip_fraction'].iloc[-1].round(4)},
+    "learning_rate": {"start": df['train/learning_rate'].iloc[1],
+                      "median": df['train/learning_rate'].median().round(4),
+                      "mean": df['train/learning_rate'].mean().round(4),
+                      "end": df['train/learning_rate'].iloc[-1]},
+    "n_updates": {"total": df['train/n_updates'].iloc[-1]}
     }
+
+   #training_summary_json = json.dumps(training_summary_json, indent=4)
+
+   return training_summary
+
 def generate_patch(old_code: str, new_code: str, filename: str) -> str:
     """Compares two source strings and returns a Unified Diff."""
     diff = difflib.unified_diff(
@@ -242,6 +213,27 @@ def save_diff(old_code, new_code, iteration, attempt, base_dir):
         with open(filepath, "w") as f:
             f.write(text)
     return filepath
+# ---------------------------------------------------------
+# Agent's Hyperparameters
+# ---------------------------------------------------------
+def linear_schedule(initial_value: float, final_value: float):
+    """
+    Linear learning rate schedule.
+    :param initial_value: Starting learning rate.
+    :param final_value: Ending learning rate.
+    :return: schedule that computes current lr based on remaining progress
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0 (end).
+        """
+        return final_value + (initial_value - final_value) * progress_remaining
+
+    return func
+
+# Usage: Decay from 0.001 to 0.0001
+# set when initializing the RL model:
+# lr_schedule = linear_schedule(1e-3, 1e-4)
 # ---------------------------------------------------------
 # MEMORY FUNCTIONS (Now Workspace-Aware)
 # ---------------------------------------------------------
@@ -304,35 +296,6 @@ def get_long_term_memory(workspace, current_iteration, model_name, retention=3):
     except:
         return "Could not generate summary."
 
-def summarize_training_log(log_dir):
-    """
-    Reads the SB3 progress.json and returns a condensed dictionary.
-    """
-    log_path = os.path.join(log_dir, "progress.json")
-    # (Existing logic remains the same, just ensured path join is correct)
-    if not os.path.exists(log_path):
-        return {"error": "No training log found."}
-
-    data = []
-    try:
-        with open(log_path, 'r') as f:
-            for line in f:
-                if line.strip():
-                    data.append(json.loads(line))
-    except:
-        return {"error": "Could not parse log."}
-
-    if not data: return {"error": "Empty log."}
-
-    first = data[0]
-    last = data[-1]
-    
-    return {
-        "entropy_start": f"{first.get('train/entropy_loss', 0):.4f}",
-        "entropy_end": f"{last.get('train/entropy_loss', 0):.4f}",
-        "value_loss_avg": f"{np.mean([d.get('train/value_loss', 0) for d in data]):.4f}",
-        "policy_loss_end": f"{last.get('train/policy_gradient_loss', 0):.4f}"
-    }
 
 # ---------------------------------------------------------
 # HARDWARE
