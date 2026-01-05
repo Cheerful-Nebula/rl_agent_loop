@@ -9,8 +9,9 @@ You are provided with telemetry for **ONE** agent evaluated under 4 distinct con
 4. **Signal Stability (Deterministic_ShapedReward):** Checks if your shaping terms are noisy.
 
 ## Data Provided
-[JSON Data Inserted Here]
-
+```json
+{configuration_json}
+```
 ## Analysis Constraints
 1. **Unified Policy Assumption:** You must acknowledge that "Config A" and "Config B" are the SAME agent. Do not say "Agent A did X while Agent B did Y." Say "The agent does X under condition A."
 2. **No Conditional Logic:** You are strictly forbidden from suggesting reward functions that check for the configuration name. The reward function must be universal.
