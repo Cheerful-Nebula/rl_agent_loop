@@ -13,11 +13,10 @@ from src import utils
 from src.workspace_manager import ExperimentWorkspace
 
 def summarize_eval(iteration: int,stats: dict, tracker : PositionTracker) -> dict:
-    policy_label= "Deterministic" if stats['deterministic_flag'] else "Stochastic"
+    
     final_stats = {"Iteration":iteration,
         "deterministic_flag": stats["deterministic_flag"],
         "reward_shape": stats["reward_shape"],
-        "config_id" :f"{policy_label}Policy_{stats["reward_shape"]}Reward",
         # Standard Metrics 
         "mean_reward": stats["mean_reward"],
         "std_reward": stats["std_reward"],

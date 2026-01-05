@@ -134,8 +134,8 @@ def run_training_cycle(iteration):
     stats_list = [base_det_stats, base_stoch_stats, shaped_det_stats, shaped_stoch_stats]
     # Prepare Evaluation Data for handoff to the controller analyst
     for stats in stats_list:
+        stats['policy_behavior'] = "Deterministic" if stats['deterministic_flag'] else "Stochastic"
         del stats['deterministic_flag']
-        del stats['reward_shape']
         del stats['Iteration']   
 
 
