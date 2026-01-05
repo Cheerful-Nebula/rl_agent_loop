@@ -35,7 +35,7 @@ def build_diagnosis_prompt(config_list, current_code, long_term_memory, short_te
     configuration_json = json.dumps(config_list, indent=4)
 
     # Load the multi-diagnosis task template
-    task_template = loader.load_template("tasks", "analyze","diagnose_agent_v03")
+    task_template = loader.load_template("tasks", "analyze","diagnose_agent_v04")
 
     # Build user task
     user_task = task_template.format(
@@ -61,7 +61,7 @@ def build_coding_prompt(plan, current_code):
 
 def build_fix_prompt(invalid_code, feedback):
     """Constructs prompts for Phase 3: Debugging/fixing."""
-    role = loader.load_template("roles", "coder", "python_coder")
+    role = loader.load_template("roles", "coder", "python_coder_v02")
     
     task_raw = loader.load_template("tasks", "code_fix", "fix_code")
     task = task_raw.format(

@@ -15,23 +15,25 @@ from src.workspace_manager import ExperimentWorkspace
 def summarize_eval(iteration: int,stats: dict, tracker : PositionTracker) -> dict:
     
     final_stats = {"Iteration":iteration,
-        "deterministic_flag": stats["deterministic_flag"],
-        "reward_shape": stats["reward_shape"],
-        # Standard Metrics 
-        "mean_reward": stats["mean_reward"],
-        "std_reward": stats["std_reward"],
-        "mean_ep_length": stats["mean_len"],
-        "reward_success_rate": stats["success_rate"],
-        "position_success_rate": stats["pos_success_rate"],
-        "crash_rate": stats["crash_rate"],
-        "raw_episode_lengths": stats["raw_lengths"], # For Survival Analysis (Kaplan-Meier)
-        "raw_outcomes": stats["raw_outcomes"],
-        # Diagnostics
-        "avg_x_position": float(tracker.rollout_pts_agg[0]['avg']),
-        "avg_descent_velocity": float(tracker.rollout_pts_agg[3]['avg']),
-        "avg_tilt_angle": float(tracker.rollout_pts_agg[4]['avg']),
-        "vertical_stability_index": float(tracker.get_episode_metrics()[3]['std_dev']),
-        "horizontal_stability_index": float(tracker.get_episode_metrics()[0]['std_dev'])}
+                   "deterministic_flag": stats["deterministic_flag"],
+                   "policy_behavior": "Deterministic" if stats["deterministic_flag"] else "Stochastic",
+                    "reward_shape": stats["reward_shape"],
+                    # Standard Metrics 
+                    "mean_reward": stats["mean_reward"],
+                    "median_reward":stats["median_reward"],
+                    "std_reward": stats["std_reward"],
+                    "mean_ep_length": stats["mean_len"],
+                    "reward_success_rate": stats["success_rate"],
+                    "position_success_rate": stats["pos_success_rate"],
+                    "crash_rate": stats["crash_rate"],
+                    "raw_episode_lengths": stats["raw_lengths"], # For Survival Analysis (Kaplan-Meier)
+                    "raw_outcomes": stats["raw_outcomes"],
+                    # Diagnostics
+                    "avg_x_position": float(tracker.rollout_pts_agg[0]['avg']),
+                    "avg_descent_velocity": float(tracker.rollout_pts_agg[3]['avg']),
+                    "avg_tilt_angle": float(tracker.rollout_pts_agg[4]['avg']),
+                    "vertical_stability_index": float(tracker.get_episode_metrics()[3]['std_dev']),
+                    "horizontal_stability_index": float(tracker.get_episode_metrics()[0]['std_dev'])}
     return final_stats
 
 def run_single_eval_pass(env, model, num_episodes,deterministic_flag = True, tracker=None):
@@ -82,6 +84,7 @@ def run_single_eval_pass(env, model, num_episodes,deterministic_flag = True, tra
     eval_metrics = {
         "deterministic_flag": deterministic_flag,
         "mean_reward": float(np.mean(total_rewards)),
+        "median_reward": float(np.median(total_rewards)),
         "std_reward": float(np.std(total_rewards)),
         "mean_len": float(np.mean(episode_lengths)),
         "success_rate": reward_successes / num_episodes,
