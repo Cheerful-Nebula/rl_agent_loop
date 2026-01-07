@@ -19,21 +19,21 @@ def summarize_eval(iteration: int,stats: dict, tracker : PositionTracker) -> dic
                    "policy_behavior": "Deterministic" if stats["deterministic_flag"] else "Stochastic",
                     "reward_shape": stats["reward_shape"],
                     # Standard Metrics 
-                    "mean_reward": stats["mean_reward"],
-                    "median_reward":stats["median_reward"],
-                    "std_reward": stats["std_reward"],
-                    "mean_ep_length": stats["mean_len"],
-                    "reward_success_rate": stats["success_rate"],
-                    "position_success_rate": stats["pos_success_rate"],
-                    "crash_rate": stats["crash_rate"],
-                    "raw_episode_lengths": stats["raw_lengths"], # For Survival Analysis (Kaplan-Meier)
-                    "raw_outcomes": stats["raw_outcomes"],
+                    "mean_reward": round(stats["mean_reward"], 4),
+                    "median_reward": round(stats["median_reward"], 4),
+                    "std_reward": round(stats["std_reward"], 4),
+                    "mean_ep_length": round(stats["mean_len"], 4),
+                    "reward_success_rate": round(stats["success_rate"], 4),
+                    "position_success_rate": round(stats["pos_success_rate"], 4),
+                    "crash_rate": round(stats["crash_rate"], 4),
+                    "raw_episode_lengths": stats["raw_lengths"],   # For Survival Analysis (Kaplan-Meier)
+                   # "raw_outcomes": stats["raw_outcomes"],
                     # Diagnostics
-                    "avg_x_position": float(tracker.rollout_pts_agg[0]['avg']),
-                    "avg_descent_velocity": float(tracker.rollout_pts_agg[3]['avg']),
-                    "avg_tilt_angle": float(tracker.rollout_pts_agg[4]['avg']),
-                    "vertical_stability_index": float(tracker.get_episode_metrics()[3]['std_dev']),
-                    "horizontal_stability_index": float(tracker.get_episode_metrics()[0]['std_dev'])}
+                    "avg_x_position": round(float(tracker.rollout_pts_agg[0]['avg']), 4),
+                    "avg_descent_velocity": round(float(tracker.rollout_pts_agg[3]['avg']), 4),
+                    "avg_tilt_angle": round(float(tracker.rollout_pts_agg[4]['avg']), 4),
+                    "vertical_stability_index": round(float(tracker.get_episode_metrics()[3]['std_dev']), 4),
+                    "horizontal_stability_index": round(float(tracker.get_episode_metrics()[0]['std_dev']), 4)}
     return final_stats
 
 def run_single_eval_pass(env, model, num_episodes,deterministic_flag = True, tracker=None):
@@ -91,7 +91,7 @@ def run_single_eval_pass(env, model, num_episodes,deterministic_flag = True, tra
         "pos_success_rate": position_landings / num_episodes,
         "crash_rate": crashes / num_episodes,
         "raw_lengths": episode_lengths,
-        "raw_outcomes": ["crash" if r <= -100 else "landed" for r in total_rewards]
+    #    "raw_outcomes": ["crash" if r <= -100 else "landed" for r in total_rewards]
     }
 
     return eval_metrics

@@ -62,6 +62,131 @@ def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:li
             f.write(final_content)
         print(f"📝 Plan saved to {plan_path}") 
 
+import json
+from textwrap import indent
+
+def plan_json_to_markdown(plan_json: str) -> str:
+    """
+    Convert the LLM's Reward Function Refinement Plan JSON into Markdown.
+
+    plan_json: JSON string with keys:
+      - Analysis (str)
+      - Identified Issues (str or list[str])
+      - Recommendations (str or list[str])
+      - Reward Function Refinement Plan:
+          - Modifications: list[{Description, Rationale}]
+          - Implementation Steps: str or list[str]
+          - Future Work: list[{Hypothesis, Confidence Score, Expected Outcome}]
+    """
+    plan = json.loads(plan_json)
+
+    analysis = plan.get("Analysis", "").strip()
+    issues = plan.get("Identified Issues", [])
+    recs = plan.get("Recommendations", [])
+    refinement = plan.get("Reward Function Refinement Plan", {}) or {}
+
+    mods = refinement.get("Modifications", [])
+    impl_steps = refinement.get("Implementation Steps", [])
+    future_work = refinement.get("Future Work", [])
+
+    # Normalize possibly-string fields to lists
+    if isinstance(issues, str):
+        issues = [s.strip() for s in issues.split("\n") if s.strip()]
+    if isinstance(recs, str):
+        recs = [s.strip() for s in recs.split("\n") if s.strip()]
+    if isinstance(impl_steps, str):
+        impl_steps = [s.strip() for s in impl_steps.split("\n") if s.strip()]
+    if isinstance(mods, dict):
+        mods = [mods]
+    if isinstance(future_work, dict):
+        future_work = [future_work]
+
+    lines = []
+
+    # Top-level analysis
+    if analysis:
+        lines.append("## Analysis")
+        lines.append("")
+        lines.append(analysis)
+        lines.append("")
+
+    # Issues
+    if issues:
+        lines.append("## Identified Issues")
+        lines.append("")
+        for i, issue in enumerate(issues, 1):
+            lines.append(f"{i}. {issue}")
+        lines.append("")
+
+    # Recommendations
+    if recs:
+        lines.append("## Recommendations")
+        lines.append("")
+        for i, rec in enumerate(recs, 1):
+            lines.append(f"{i}. {rec}")
+        lines.append("")
+
+    # Reward Function Refinement Plan
+    if mods or impl_steps or future_work:
+        lines.append("## Reward Function Refinement Plan")
+        lines.append("")
+
+    # Modifications
+    if mods:
+        lines.append("### Modifications")
+        lines.append("")
+        for idx, m in enumerate(mods, 1):
+            desc = (m.get("Description") or "").strip()
+            rat = (m.get("Rationale") or "").strip()
+            lines.append(f"#### Modification {idx}")
+            if desc:
+                lines.append("")
+                lines.append("**Description**")
+                lines.append("")
+                lines.append(desc)
+            if rat:
+                lines.append("")
+                lines.append("**Rationale**")
+                lines.append("")
+                lines.append(rat)
+            lines.append("")
+
+    # Implementation Steps
+    if impl_steps:
+        lines.append("### Implementation Steps")
+        lines.append("")
+        for i, step in enumerate(impl_steps, 1):
+            lines.append(f"{i}. {step}")
+        lines.append("")
+
+    # Future Work
+    if future_work:
+        lines.append("### Future Work")
+        lines.append("")
+        for i, fw in enumerate(future_work, 1):
+            hyp = (fw.get("Hypothesis") or "").strip()
+            conf = fw.get("Confidence Score") or fw.get("Confidence") or ""
+            exp = (fw.get("Expected Outcome") or "").strip()
+
+            lines.append(f"#### Hypothesis {i}")
+            if hyp:
+                lines.append("")
+                lines.append("**Hypothesis**")
+                lines.append("")
+                lines.append(hyp)
+            if conf != "":
+                lines.append("")
+                lines.append(f"**Confidence Score:** {conf}")
+            if exp:
+                lines.append("")
+                lines.append("**Expected Outcome**")
+                lines.append("")
+                lines.append(exp)
+            lines.append("")
+
+    return "\n".join(lines).rstrip()
+
+
 # ---------------------------------------------------------
 # ENVIRONMENTS
 # ---------------------------------------------------------
