@@ -17,9 +17,6 @@ unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh
 *_old.py
-<<<<<<< HEAD
-sandbox.ipynb
-=======
-sandbox.ipynb
 inspect_model.py
->>>>>>> 79709b5 (added sandbox and inspect_model scripts to .gitignore)
+sandbox.ipynb
+
