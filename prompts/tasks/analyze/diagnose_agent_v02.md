@@ -1,83 +1,38 @@
-# Evaluation Task: Multi-Configuration PPO Agent Diagnosis
+# Evaluation Task: Single Agent Diagnostic Report
 
-You will receive telemetry describing N different evaluation configurations of the same PPO agent.  
-Each configuration contains reward statistics, outcome patterns, stability indices, and rollout analytics.
+- You are provided with telemetry for a PPO agent on `LunarLander-v3`. 
+- The agent was evaluated 4 times: Based Reward, Deterministic Behavior (i.e. greedy-epsilon)/Base Reward, Stochastic Behavior/ Shaped Reward, Deterministic Behavior/ Shaped Reward, Stochastic Behavior
+- The agent was evaluate 4 times with the hopes of having a better lens for deciphering better effectiveness of how well the agent can learn the reward signals of the current reward function but also how well that translates to performing the underlying desired task.
+- A controlled descent with minimal tilt in the center (0,0)
+- `reward_success_rate` is number of episodes with reward >= 200 divided by total episodes
+- `pos_success_rate` is number of episodes that land within a radius of 0.1 of the center divided by total episodes
+- `crash_rate` is number of episodes that the lander crashed divided by total number of episodes, where "crash' is assumed when reward is <= -100
+- Be sure to analyze the following diagnostic metrics:
+    - `avg_x_position`: Average horizontal position over the episode (closer to 0 is better)
+    - `avg_descent_velocity`: Average vertical velocity over the episode (closer to 0 is better)
+    - `avg_tilt_angle`: Average tilt angle over the episode (closer to 0 is better)
+    - `vertical_stability_index`: Standard deviation of vertical position over the episode (lower is better)
+    - `horizontal_stability_index`: Standard deviation of horizontal position over the episode (lower is better)
+- Be outspoken about any missing information which is hindering your analysis, you must then give reccomendations on what you need provided to you next time for a complete analysis
 
-Your job is to:
-
-1. Compare all configurations.
-2. Infer behavioral differences caused by reward shaping, policy randomness, or other configuration settings.
-3. Detect PPO-specific training dynamics issues such as entropy collapse, KL oscillation, or reward-hacking.
-4. Identify *configuration-specific* and *global* failure modes.
-5. Recommend improvements to reward function shaping and PPO hyperparameters.
-6. Provide a prioritized action plan.
-
----
+## The 4 Diagnostic Views
+These four configurations form a diagnostic matrix that isolates the effects of reward design and policy entropy. Analyze them comparatively to determine what aspects of the agent’s performance arise from shaping, from stochasticity, or from genuine learning. Use differences across configurations to infer failure points, robustness issues, and concrete improvements to PPO training.
 
 ## Data Provided
-
-Below is a JSON list named `configurations`, where each element has fields:
-
-- `"config_id"`: A label such as `"base_stoch"` or `"shaped_det"` or anything else.
-- `"meta"`: Any metadata describing the configuration (reward shaping boolean, deterministic flag, etc.).
-- `"metrics"`: Reward and success statistics.
-- `"diagnostics"`: Stability, tilt, velocity, etc.
-- `"training_summary"`: Entropy, KL, losses, etc.
-
-### Configurations (JSON)
-
 ```json
 {configuration_json}
 ```
-### Training Dynamics
-
-### Memory
-**Long-Term Lessons:**
-{long_term_memory}
-
-**Short-Term History:**
-{short_term_history}
 
 ## What You Must Produce
 
-### 1. **Cross-Configuration Comparison**
-Identify patterns of improvement or degradation among configurations.  
-Discuss differences in:
-- reward stability  
-- crash behavior  
-- horizontal/vertical stability  
-- tilt/descent drift  
-- outcome distributions  
+As the head RL researcher, you must evaluate the information given to you to assess the agent's performance of performing the desired task and efficacy of learning the reward signals. You are interpreting the results outloud, providing an analysis on how to overcome the shortcomings, lastly you will return the `Reward Function Refinement Plan` which will be passed directly to our top python developer. Have your plan for the python developer be the very last part of your output and be in JSON
 
-### 2. **Diagnostic Interpretation**
-Explain what behaviors are implied by the telemetry.  
-Call out instability, oscillatory control, reward-hacking, edge-case failures, or reward-shaping side-effects.
+### Reward Function Refinement Plan
 
-### 3. **Reward Function Improvements**
-Recommend changes such as:
-- new shaping terms  
-- removal of harmful terms  
-- coefficient adjustments  
-- penalties/rewards that should be stronger or weaker  
+- In your Future Work section Generate 3 different hypothesis on behavior that may occur from the new reward function and how the outcome of your hypothesis will inform your next `Reward Function Refinement Plan`. Assign a 'Confidence Score' to each based on how robust you think it will be. Include at least one 'experimental' idea with lower confidence scores but higher potential novelty.
 
-Be precise—your recommendations must map directly to code changes in the reward function.
 
-### 4. **PPO Hyperparameter Adjustments**
-Give targeted suggestions about:
-- entropy_bonus  
-- clip_range  
-- learning_rate  
-- GAE lambda  
-- value loss coefficient  
-- number of minibatches  
-- batch size stability  
+### Your Output Format
 
-Tie suggestions directly to specific telemetry patterns.
+Your instructions and plan for the python developer must be last section of your output
 
-### 5. **Prioritized Action List**
-Provide a sorted list of the top interventions with the highest expected benefit.
-
----
-
-Use only the data provided. Avoid unrelated speculation.  
-Produce a concise but technically grounded analysis.

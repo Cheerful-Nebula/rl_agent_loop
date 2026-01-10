@@ -190,19 +190,11 @@ def plan_json_to_markdown(plan_json: str) -> str:
 # ---------------------------------------------------------
 # ENVIRONMENTS
 # ---------------------------------------------------------
-def make_shaped_env(reward_code_path:str):
+def make_env(reward_code_path:str | None = None):
     import gymnasium as gym
     env = gym.make(Config.ENV_ID)
-    env = DynamicRewardWrapper(env, reward_code_path=str(reward_code_path)) 
+    env = DynamicRewardWrapper(env, reward_code_path=reward_code_path) 
     return Monitor(env)
-
-def make_base_env():
-    import gymnasium as gym
-    env = gym.make(Config.ENV_ID)
-    return Monitor(env)
-
-
-
 # ---------------------------------------------------------
 # SCIENTIFIC LOGGING & ANALYSIS
 # ---------------------------------------------------------

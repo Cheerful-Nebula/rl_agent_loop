@@ -63,12 +63,24 @@ class CodeValidator:
             ("Extreme Values (Overflow Risk)", np.array([100.0, 100.0, 50.0, 50.0, 3.14, 10.0, 1.0, 1.0], dtype=np.float32))
         ]
 
+        # Prepare Dummy Info Dictionary to match Prompt/Wrapper expectations
+        dummy_info = {
+            "raw_physics": {
+                "distance_from_origin": 0.5,
+                "angular_velocity": 0.1,
+                "linear_velocity_mag": 0.2,
+                "fuel_consumed_this_step": 0.03
+            }
+        }
+
         func = local_scope["calculate_reward"]
         
         for name, obs in scenarios:
             try:
-                # Mock inputs
-                val = func(obs, 0.0, False, False, {"is_success": False})
+                # --- CORRECTED CALL SIGNATURE ---
+                # Was: func(obs, 0.0, False, False, info)  <-- Old 5-arg style
+                # Now: func(obs, info)                     <-- New 2-arg style
+                val = func(obs, dummy_info)
                 
                 # --- MATH CHECK ---
                 # 1. Check if it returns a number
@@ -79,6 +91,8 @@ class CodeValidator:
                 if not np.isfinite(val):
                     return False, f"Math Error ({name}): Reward function returned {val} (NaN/Infinity). Check for division by zero or log of negative numbers."
 
+            except TypeError as e:
+                 return False, f"Runtime Execution Error ({name}): Signature mismatch. Ensure you are defining 'def calculate_reward(observation, info):'. Error details: {str(e)}"
             except Exception as e:
                 return False, f"Runtime Execution Error ({name}): {str(e)}"
 

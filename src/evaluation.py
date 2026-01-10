@@ -91,7 +91,6 @@ def run_single_eval_pass(env, model, num_episodes,deterministic_flag = True, tra
         "pos_success_rate": position_landings / num_episodes,
         "crash_rate": crashes / num_episodes,
         "raw_lengths": episode_lengths,
-    #    "raw_outcomes": ["crash" if r <= -100 else "landed" for r in total_rewards]
     }
 
     return eval_metrics
@@ -106,7 +105,7 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
     
     # --- PASS 1: STANDARD EVALUATION (The Objective Truth) ---
     print(f"📊 Eval Pass 1: Standard Environment,{"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"}...")
-    std_env = utils.make_base_env() 
+    std_env = utils.make_env() 
     std_tracker = PositionTracker([0, 3, 4], 0, Config.ALGORITHM, Config.ENV_ID)
     std_stats = run_single_eval_pass(std_env, model, num_episodes, deterministic_flag= deterministic, tracker = std_tracker)
     std_stats["reward_shape"]= "Base"
@@ -115,7 +114,7 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
     # --- PASS 2: SHAPED EVALUATION (The Agent's Reality) ---
     if reward_code_path:
         print(f"📊 Eval Pass 2: Shaped Environment, {"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"}...")
-        shp_env = utils.make_shaped_env(reward_code_path)
+        shp_env = utils.make_env(reward_code_path)
         shp_tracker = PositionTracker([0, 3, 4], 0, Config.ALGORITHM, Config.ENV_ID)
         shp_stats = run_single_eval_pass(shp_env, model, num_episodes, deterministic_flag= deterministic, tracker = shp_tracker)
         shp_stats["reward_shape"] = "Shaped"
@@ -124,8 +123,8 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
     # --- MERGE & RETURN ---
     # We prefix keys to distinguish them in the CSV
     base_stats = summarize_eval(iteration,std_stats,std_tracker)
-
-    shaped_stats = summarize_eval(iteration,shp_stats, shp_tracker)
-
+    if reward_code_path:
+        shaped_stats = summarize_eval(iteration,shp_stats, shp_tracker)
+    else: shaped_stats = base_stats.copy()
 
     return  base_stats, shaped_stats

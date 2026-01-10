@@ -1,40 +1,64 @@
 # Evaluation Task: Single Agent Diagnostic Report
 
-You are provided with telemetry for **ONE** agent evaluated under 4 distinct conditions. Your goal is to improve the **General Reward Function** so the agent succeeds in the "Deployment" condition.
+- You are provided with telemetry for a PPO agent on `LunarLander-v3`. 
+- The agent was evaluated 4 times: Based Reward, Deterministic Behavior (i.e. greedy-epsilon)/Base Reward, Stochastic Behavior/ Shaped Reward, Deterministic Behavior/ Shaped Reward, Stochastic Behavior
+- The agent was evaluate 4 times with the hopes of having a better lens for deciphering better effectiveness of how well the agent can learn the reward signals of the current reward function but also how well that translates to performing the underlying desired task.
+- A controlled descent with minimal tilt in the center (0,0)
+- `reward_success_rate` is number of episodes with reward >= 200 divided by total episodes
+- `pos_success_rate` is number of episodes that land within a radius of 0.1 of the center divided by total episodes
+- `crash_rate` is number of episodes that the lander crashed divided by total number of episodes, where "crash' is assumed when reward is <= -100
+- Be sure to analyze the following diagnostic metrics:
+    - `avg_x_position`: Average horizontal position over the episode (closer to 0 is better)
+    - `avg_descent_velocity`: Average vertical velocity over the episode (closer to 0 is better)
+    - `avg_tilt_angle`: Average tilt angle over the episode (closer to 0 is better)
+    - `vertical_stability_index`: Standard deviation of vertical position over the episode (lower is better)
+    - `horizontal_stability_index`: Standard deviation of horizontal position over the episode (lower is better)
+- Be outspoken about any missing information which is hindering your analysis, you must then give reccomendations on what you need provided to you next time for a complete analysis
 
 ## The 4 Diagnostic Views
-1. **Deployment (Deterministic_BaseReward):** The Reality Check. This is the only metric that matters for success. If this fails, the agent fails.
-2. **Exploration (Stochastic_BaseReward):** Checks if the agent can succeed when allowed to rely on luck/noise. If this is high but Deployment is low, the agent is relying on random chance.
-3. **Training Signal (Stochastic_ShapedReward):** What the agent actually feels during training. If this is high but Deployment is low, you are "Reward Hacking" (teaching the wrong objective).
-4. **Signal Stability (Deterministic_ShapedReward):** Checks if your shaping terms are noisy.
+These four configurations form a diagnostic matrix that isolates the effects of reward design and policy entropy. Analyze them comparatively to determine what aspects of the agent’s performance arise from shaping, from stochasticity, or from genuine learning. Use differences across configurations to infer failure points, robustness issues, and concrete improvements to PPO training.
 
 ## Data Provided
 ```json
 {configuration_json}
 ```
-## Analysis Constraints
-1. **Unified Policy Assumption:** You must acknowledge that "Config A" and "Config B" are the SAME agent. Do not say "Agent A did X while Agent B did Y." Say "The agent does X under condition A."
-2. **No Conditional Logic:** You are strictly forbidden from suggesting reward functions that check for the configuration name. The reward function must be universal.
-3. **Outcome Focus:** Your analysis must focus on why the **Training Signal** (Shaped) is failing to produce a good **Deployment** (Base) result.
 
 ## What You Must Produce
 
-### 1. The Sim-to-Real Gap
-Compare `Stochastic_ShapedReward` (what it learns) vs `Deterministic_BaseReward` (how it performs).
-- Is the agent reward hacking? (High Shaped, Low Base)
-- Is the agent relying on noise? (High Stochastic, Low Deterministic)
+As the head RL researcher, you must evaluate the information given to you to assess the agent's performance of performing the desired task and efficacy of learning the reward signals. You are interpreting the results outloud, providing an analysis on how to overcome the shortcomings, lastly you will return the `Reward Function Refinement Plan` which will be passed directly to our top python developer. Have your plan for the python developer be the very last part of your output and be in JSON
 
-### 2. Failure Mode Analysis
-Based on the **Deployment** telemetry (Deterministic_BaseReward), why is it crashing?
-- Velocity too high?
-- Tilt instability?
-- Hovering without landing?
+### Reward Function Refinement Plan
 
-### 3. Reward Function Refinement Plan
-Propose specific mathematical changes to the reward function to fix the Deployment behavior.
-- If it crashes due to velocity: Increase velocity penalties.
-- If it hovers: Increase position incentives or landing bonuses.
-- **CRITICAL:** Do not propose `if/else` logic based on config names.
+- In your Future Work section Generate 3 different hypothesis on behavior that may occur from the new reward function and how the outcome of your hypothesis will inform your next `Reward Function Refinement Plan`. Assign a 'Confidence Score' to each based on how robust you think it will be. Include at least one 'experimental' idea with lower confidence scores but higher potential novelty.
 
-### 4. PPO Tuning
-Suggest hyperparameters (Ent Coefficient, Learning Rate) to bridge the gap between Stochastic and Deterministic performance.
+
+### Your Output Format
+
+Your instructions and plan for the python developer must follow the following schema:
+
+```json
+
+{{
+  "Analysis": "Your detailed analysis of the agent's performance across the four configurations, highlighting strengths, weaknesses, and insights drawn from the diagnostic metrics.",
+  "Identified Issues": "A summary of the key issues identified in the agent's performance, including any patterns observed across different configurations.",
+  "Recommendations": "Specific recommendations for improving the reward function and training process based on your analysis.",
+  "Reward Function Refinement Plan": {{
+    "Modifications": [
+      {{
+        "Description": "Detailed description of the proposed modification to the reward function.",
+        "Rationale": "Explanation of why this modification is expected to improve performance."
+      }}
+    ],
+    "Implementation Steps": [
+      "Step-by-step instructions for implementing the proposed modifications."
+    ],
+    "Future Work": [
+      {{
+        "Hypothesis": "Description of the hypothesis regarding agent behavior with the new reward function.",
+        "Confidence Score": "Numerical score indicating confidence in this hypothesis (e.g., 1-10).",
+        "Expected Outcome": "What you expect to observe if the hypothesis is correct."
+      }}
+    ]
+  }}
+}}
+```

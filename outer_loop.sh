@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Define the contenders
-MODELS=("codegemma:7b" "llama3.1:8b" "qwen2.5-coder:7b" "dolphin-llama3:8b" "wizardlm2:7b" "deepseek-coder:6.7b" ) # Add your models here
-
+#MODELS=("codegemma:7b" "llama3.1:8b" "qwen2.5-coder:7b" "dolphin-llama3:8b" "wizardlm2:7b" "deepseek-coder:6.7b" ) # Add your models here
+MODELS=("gpt-oss:20b")
 # Capture arguments
 ITERATIONS=${1:-5}     # required-ish: default 5
 TIMESTEPS=${2:-50000}  # required-ish: default 50000
