@@ -17,4 +17,6 @@ unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh
 *_old.py
+inspect_model.py
 sandbox.ipynb
+
