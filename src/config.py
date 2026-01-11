@@ -4,7 +4,6 @@ import platform
 class Config:
     # 1. Experiment Settings
     ENV_ID = "LunarLander-v3"
-    N_ENVS = 32 if platform.system() == "Linux" else 4 # Auto-scale based on your benchmarks
     TOTAL_TIMESTEPS = int(os.getenv("TOTAL_TIMESTEPS", 50000))
     ALGORITHM = "PPO"
     
@@ -14,6 +13,21 @@ class Config:
 
     # 3. Code Generation Settings
     RETENTION_MEMORY = 3 # How many past iterations to remember in detail
+    # For Phase 1: Researcher (Diagnosis)
+    analyst_options={
+        'num_ctx': 16384,      # M4 Max can handle this easily
+        'num_predict': 4000,   # Prevent cutoff
+        'temperature': 0.5,    # Balance creativity/precision
+        'top_p': 0.9,
+    }
+    # For Phase 2: Coder (Implementation)
+    coder_options={
+        'num_ctx': 16384,
+        'num_predict': 4000,
+        'temperature': 0.1,    # Strict adherence to syntax
+        'repeat_penalty': 1.02 # Low penalty to allow code structure
+    }
+    # Below is used as base reward function, for iteration 1
     INITIAL_TEMPLATE = """
 def calculate_reward(observation, info):
     \"\"\"

@@ -47,7 +47,6 @@ def run_agentic_improvement(iteration):
 
     # C. Training Dynamics (Tensorboard Summary)
     logger_dir = ws.dirs["telemetry_raw"]
-    #training_summary = utils.summarize_training_log(str(logger_dir))
 
     # D. Long/Short Term Memory
     short_term_history = utils.get_recent_history(ws, iteration)
@@ -60,7 +59,6 @@ def run_agentic_improvement(iteration):
     print("🔵 AGENT: Phase 1 - Diagnosing & Planning...")
     
     # Build Prompt using our Prompt Builder
-    diag_options = {"temperature": 0.7, "top_p": 0.9, "think": True}
     diag_role, diag_task = prompts.build_diagnosis_prompt(
         Config.analyst_template,
         config_list=metrics,
@@ -70,10 +68,14 @@ def run_agentic_improvement(iteration):
     )
     
     try:
-        response = ollama.chat(model=MODEL_NAME, messages=[
-            {'role': 'system', 'content': diag_role},
-            {'role': 'user', 'content': diag_task}
-        ])
+        response = ollama.chat(
+            model=MODEL_NAME, 
+            messages=[
+                {'role': 'system', 'content': diag_role},
+                {'role': 'user', 'content': diag_task},
+                {"images": ws.dirs["plots"] / f"iter{iteration:02d}_training_curves.png"}],
+                options = Config.analyst_options)
+        
         diagnosis_plan = response['message']['content']
  
         
@@ -109,7 +111,7 @@ def run_agentic_improvement(iteration):
         phase="diagnosis",
         system_role=diag_role,
         user_task=diag_task,
-        options=diag_options,
+        options=Config.analyst_options,
         prompt_template_roles=f"{Config.analyst_template[0]}.md",
         prompt_template_tasks=f"{Config.analyst_template[1]}.md",)
     # =========================================================
@@ -126,10 +128,13 @@ def run_agentic_improvement(iteration):
 
     # Initial Code Generation Attempt
     try:
-        response2 = ollama.chat(model=MODEL_NAME, messages=[
+        response2 = ollama.chat(
+            model=MODEL_NAME,
+            messages=[
             {'role': 'system', 'content': code_role},
-            {'role': 'user', 'content': code_task}
-        ])
+            {'role': 'user', 'content': code_task}],
+            options = Config.coder_options)
+        
         # Save ChatResponse Data to CSV
         append_chatresponse_row(
             csv_path =ws.containers['cognition_csv'], 
@@ -151,7 +156,7 @@ def run_agentic_improvement(iteration):
             phase="code_generation",
             system_role=code_role,
             user_task=code_task,
-            options=None, #diag_options,
+            options=Config.coder_options,
             prompt_template_roles=f"{Config.code_gen_template[0]}.md",
             prompt_template_tasks=f"{Config.code_gen_template[1]}.md")
 
@@ -200,10 +205,12 @@ def run_agentic_improvement(iteration):
         
         fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
         try:
-            response3 = ollama.chat(model=MODEL_NAME, messages=[
+            response3 = ollama.chat(
+                model=MODEL_NAME,
+                messages=[
                 {'role': 'system', 'content': fix_role},
-                {'role': 'user', 'content': fix_task}
-            ])
+                {'role': 'user', 'content': fix_task}],
+                options = Config.coder_options)
 
             # Save ChatResponse Data to CSV
             append_chatresponse_row(

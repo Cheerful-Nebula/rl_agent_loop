@@ -19,6 +19,7 @@ from src import utils
 from src.callbacks import *
 from src.evaluation import evaluate_agent
 from src.config import Config # Still used for static settings like ENV_ID
+from src.plot_progress import *
 
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
@@ -47,7 +48,7 @@ def run_training_cycle(iteration):
     ppo_params = utils.get_optimized_ppo_params(n_envs, device)
 
     # 4. Create Environment, custom wrapper for injecting new Reward Function
-    env = make_vec_env(lambda: utils.make_env(reward_code_path), n_envs=Config.N_ENVS, vec_env_cls=SubprocVecEnv)
+    env = make_vec_env(lambda: utils.make_env(reward_code_path), n_envs=n_envs, vec_env_cls=SubprocVecEnv)
     base_eval_env = utils.make_env()
     shaped_eval_env = utils.make_env(reward_code_path)
 
@@ -77,7 +78,7 @@ def run_training_cycle(iteration):
     )
     output_formats = [
         # Optional: stdout logging
-       # make_output_format("stdout", str(logger_dir), suffix),
+        make_output_format("stdout", str(logger_dir), suffix),
 
         # Per-iteration CSV: telemetry_raw/progress_XXX.csv
         make_output_format("csv",        str(logger_dir), suffix),
@@ -148,7 +149,9 @@ def run_training_cycle(iteration):
     for stats in stats_list:
         del stats['deterministic_flag']
         del stats['Iteration']   
-
+    
+    # Creating plots of the training metrics for VLM
+    plot_training_iteration(iteration,logger_dir/ f"progress_{iteration:02d}.csv")
     # 8. Data that will be given to controller analyst
     metrics_payload = {
         "timestamp": datetime.now().isoformat(),
