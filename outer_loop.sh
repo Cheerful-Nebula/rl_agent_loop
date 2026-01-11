@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Define the contenders
 #MODELS=("codegemma:7b" "llama3.1:8b" "qwen2.5-coder:7b" "dolphin-llama3:8b" "wizardlm2:7b" "deepseek-coder:6.7b" ) # Add your models here
-MODELS=("gpt-oss:20b")
+MODELS=("devstral:24b")
 # Capture arguments
 ITERATIONS=${1:-5}     # required-ish: default 5
 TIMESTEPS=${2:-50000}  # required-ish: default 50000
@@ -11,13 +11,29 @@ TAG="${3:-}"           # optional experiment tag (e.g., testingPrompts, compareL
 
 # Export global settings for Python scripts
 export TOTAL_TIMESTEPS=$TIMESTEPS
+# Add the project root to the Python search path
+export PYTHONPATH="${PYTHONPATH:-}:."
 
 # Validate input for iterations
 if ! [[ "${ITERATIONS}" =~ ^[0-9]+$ ]]; then
   echo "Error: Please provide a valid integer for iterations."
   exit 1
 fi
-
+# 🚀 LOGIC SWITCH: Select Controller based on Tag
+case "$TAG" in
+  *"vision"*)
+    echo "👁️  MODE DETECTED: Vision Language Experiment"
+    SELECTED_CONTROLLER="controllers/vision.py"
+    ;;
+  *"agentic"*)
+    echo "🤖 MODE DETECTED: Agentic Tools Experiment"
+    SELECTED_CONTROLLER="controllers/agentic.py"
+    ;;
+  *)
+    echo "📉 MODE: Standard Text Analysis"
+    SELECTED_CONTROLLER="controllers/standard.py"
+    ;;
+esac
 # Format steps for directory naming (e.g. 500000 -> 500k, 1200000 -> 1.2M)
 format_steps() {
   local n="$1"
@@ -72,7 +88,7 @@ for model in "${MODELS[@]}"; do
   echo "📂 Target Directory: experiments/$CAMPAIGN_TAG"
 
   # 3. RUN THE INNER LOOP
-  ./inner_loop.sh "$ITERATIONS"
+  ./inner_loop.sh "$ITERATIONS" "$SELECTED_CONTROLLER"
 
   # 4. (Optional) GENERATE SUMMARY PLOT
   # python3 src/plot_campaign_summary.py

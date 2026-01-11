@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-# Capture arguments from outer_loop.sh
+# 1. Capture arguments from outer_loop.sh
 # MAX_LOOPS comes from the first argument passed by outer_loop.sh
 MAX_LOOPS=${1:-10}
+# 2. Capture the controller script name (default to standard.py)
+CONTROLLER_SCRIPT=${2:-"controllers/standard.py"}
+
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -19,14 +22,13 @@ do
     echo -e "==========================================${NC}"
 
     # 1. Train the Agent
-    # We pass the iteration explicitly. No more guessing or reading state.json.
     echo -e "${GREEN}[Step 1] Training Agent (Iteration $i)...${NC}"
     python3 train.py --iteration "$i"
 
     # 2. Improve the Code
-    # The brain also gets the specific iteration so it knows where to look.
     echo -e "${GREEN}[Step 2] Designing New Reward Function (Iteration $i)...${NC}"
-    python3 agent_controller.py --iteration "$i"
+    MODULE_PATH=$(echo "$CONTROLLER_SCRIPT" | sed 's/\//./g' | sed 's/\.py//g')
+    python3 -m "$MODULE_PATH" --iteration "$i"
 
     # Optional: Short sleep to let file system buffers flush/sync
     sleep 2
