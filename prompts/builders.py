@@ -1,6 +1,7 @@
 from . import loader
-
-def build_diagnosis_prompt(template: tuple[str,str], config_list, current_code, long_term_memory, short_term_history)-> tuple[str,str]:
+import json
+from src.utils import format_telemetry_as_table
+def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current_code, long_term_memory, short_term_history)-> tuple[str,str]:
     """
     Builds a multi-configuration LLM diagnosis prompt.
 
@@ -29,17 +30,17 @@ def build_diagnosis_prompt(template: tuple[str,str], config_list, current_code, 
 
     # Load RL Researcher persona
     system_role = loader.load_template("roles", "analyst", template[0])
-
+    performance_table= format_telemetry_as_table(metrics_json["performance"])
     # Format the JSON blob for the template
-    import json
-    configuration_json = json.dumps(config_list, indent=4)
+    metrics_json_str = json.dumps(metrics_json, indent=4)
 
     # Load the multi-diagnosis task template
     task_template = loader.load_template("tasks", "analyze",template[1])
 
     # Build user task
     user_task = task_template.format(
-        configuration_json=configuration_json,
+        performance_table = performance_table,
+        configuration_json=metrics_json_str,
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
         current_code=current_code if current_code else "# No previous code"
@@ -47,6 +48,13 @@ def build_diagnosis_prompt(template: tuple[str,str], config_list, current_code, 
 
     return system_role, user_task
 
+def build_initial_shaping_prompt(template: tuple[str,str]):
+    """Constructs prompts for generating initial reward shaping function."""
+    role = loader.load_template("roles", "coder", template[0])
+    
+    task = loader.load_template("tasks", "code_generation", template[1])
+
+    return role, task
 
 def build_coding_prompt(template: tuple[str,str],plan, current_code):
     """Constructs prompts for Phase 2 (Implementation)."""

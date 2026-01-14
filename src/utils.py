@@ -14,6 +14,8 @@ from datetime import datetime
 from stable_baselines3.common.monitor import Monitor
 from typing import Tuple
 import pandas as pd
+from textwrap import indent
+
 # -- Custom IMPORTS --
 from src.wrappers import DynamicRewardWrapper
 from src.config import Config
@@ -62,8 +64,6 @@ def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:li
             f.write(final_content)
         print(f"📝 Plan saved to {plan_path}") 
 
-import json
-from textwrap import indent
 
 def plan_json_to_markdown(plan_json: str) -> str:
     """
@@ -438,3 +438,41 @@ def get_hardware_config():
     if system == "Linux": return 32, "cuda"
     elif system == "Darwin": return 8, "mps"
     return 4, "cpu"
+
+# -----------------------------------------------------------
+# Converting evaluations metrics dictionary to markdown table
+# Hoping for improved comprehensision for analysis
+# ------------------------------------------------------------
+def format_telemetry_as_table(performance_data: list[dict]):
+    """
+    Converts the list of performance dicts into a Markdown table for better LLM reasoning.
+    """
+    if not performance_data:
+        return "No telemetry data available."
+
+    # Define the columns we want to compare
+    headers = [
+        "Policy", "Reward Shape", "Mean Reward", "Crash Rate", 
+        "Success Rate", "Avg Descent Vel", "Avg Tilt"
+    ]
+    
+    # Create the header row
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |"
+    ]
+
+    for run in performance_data:
+        # Pre-calculate/format values to reduce token noise
+        row = [
+            run.get("policy_behavior", "N/A"),
+            run.get("reward_shape", "N/A"),
+            f"{run.get('mean_reward', 0):.1f}",
+            f"{run.get('crash_rate', 0):.1%}",  # Format as percentage
+            f"{run.get('position_success_rate', 0):.1%}",
+            f"{run.get('avg_descent_velocity', 0):.4f}",
+            f"{run.get('avg_tilt_angle', 0):.4f}"
+        ]
+        table.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(table)

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 # Define the contenders
 #MODELS=("codegemma:7b" "llama3.1:8b" "qwen2.5-coder:7b" "dolphin-llama3:8b" "wizardlm2:7b" "deepseek-coder:6.7b" ) # Add your models here
-MODELS=("devstral:24b")
+MODELS=("gpt-oss:20b")
 # Capture arguments
 ITERATIONS=${1:-5}     # required-ish: default 5
 TIMESTEPS=${2:-50000}  # required-ish: default 50000
@@ -29,6 +32,10 @@ case "$TAG" in
     echo "🤖 MODE DETECTED: Agentic Tools Experiment"
     SELECTED_CONTROLLER="controllers/agentic.py"
     ;;
+  *"think"*)
+  echo "🤖 MODE DETECTED: Thinking Experiment"
+  SELECTED_CONTROLLER="controllers/thinking.py"
+  ;;
   *)
     echo "📉 MODE: Standard Text Analysis"
     SELECTED_CONTROLLER="controllers/standard.py"
@@ -86,6 +93,9 @@ for model in "${MODELS[@]}"; do
   export LLM_MODEL="$model"
 
   echo "📂 Target Directory: experiments/$CAMPAIGN_TAG"
+  # 2. Generate Initial Reward Function
+  echo -e "${GREEN}[Step 0] Generating Base Reward Function...${NC}"
+  python3 controllers/initial_shaping.py 
 
   # 3. RUN THE INNER LOOP
   ./inner_loop.sh "$ITERATIONS" "$SELECTED_CONTROLLER"
