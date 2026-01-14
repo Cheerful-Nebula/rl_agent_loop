@@ -6,10 +6,17 @@ from typing import Any, Dict, List, Optional
 import ollama
 from ollama import ChatResponse
 
+# -- Custom Imports -- 
+from src.config import Config
+# This module is dedicated to collecting,storing,viewing,setting the LLM meta-data and cognition data
 
-# This module is dedicated to collecting,storing,viewing the LLM meta-data and cognition data
-
-
+def get_thinking_flag(MODEL_NAME : str) -> bool|str:
+    if MODEL_NAME.startswith(('deepseek-r1','qwen3','magistral')):
+        thinking_flag = True
+    elif MODEL_NAME.startswith('gpt_oss'):
+        thinking_flag = Config.gpt_think_level
+    else: thinking_flag = False
+    return thinking_flag
 ##########################################################################################
 # for on-demand Markdown view from per-iteration cognition JSON for qualitative review.
 ##########################################################################################
@@ -652,3 +659,4 @@ def upsert_model_metadata_row(csv_path: str, model_name: str) -> None:
         writer.writeheader()
         for r in rows:
             writer.writerow(r)
+
