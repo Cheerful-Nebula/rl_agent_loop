@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation import CodeValidator
+from src.code_validation_experimental import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
@@ -84,13 +84,17 @@ def get_inital_shaping():
     validator = CodeValidator(clean_code)
     is_valid, feedback = validator.validate_static()
     if is_valid: 
-        is_valid, feedback = validator.validate_runtime()
+        is_valid, feedback = validator.validate_runtime(strict_mode = False)
         if not is_valid:
+            print("*"*20)
             print("Initial generated code failed runtime analysis")
-            sys.exit()
+            print("*"*20)
+
     else:
+        print("*"*20)
         print("Initial generated code failed static analysis")
-        sys.exit()
+        print("*"*20)
+
     
     # Save code to file to train the first iteration agent
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -99,12 +103,18 @@ def get_inital_shaping():
     try:
         with open(save_path, "w") as f:
             f.write(final_content)
-        print(f"✅ Code validated and saved.")
+        if is_valid:
+            print(f"✅ Code validated and saved.")
     except Exception as e:
         print(f"❌ Phase 0, Error saving code: {e}")
+
     # Save cognition history in easy read markdown documents 
     utils.save_cognition_markdown(ws,0, cognition_list)
+
     elapsed_time =time.perf_counter()-start_time
     print(f"Execution took: {timedelta(seconds=elapsed_time)}")
+
+
+
 if __name__ == "__main__":
     get_inital_shaping()

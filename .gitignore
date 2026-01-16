@@ -12,7 +12,7 @@ plots/
 *.json
 # This script is overwritten by the LLMs everytime so changes every run
 reward_shaping.py 
-# Unit tests/ experimental scripts
+# Unit tests/ experimental or temp scripts
 unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh

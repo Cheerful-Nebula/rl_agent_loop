@@ -443,17 +443,32 @@ def get_hardware_config():
 # Converting evaluations metrics dictionary to markdown table
 # Hoping for improved comprehensision for analysis
 # ------------------------------------------------------------
-def format_telemetry_as_table(performance_data: list[dict]):
+def format_telemetry_as_table(stats_list: list[dict]):
     """
     Converts the list of performance dicts into a Markdown table for better LLM reasoning.
     """
-    if not performance_data:
+    if not stats_list:
         return "No telemetry data available."
 
+     
+    for stats_dict in stats_list:
+        if stats_dict["policy_behavior"] == "Deterministic":
+            if stats_dict["reward_shape"] == "Base":
+                det_base_stats = stats_dict
+            else:
+                det_shaped_stats = stats_dict
+        else:
+            if stats_dict["reward_shape"] == "Base":
+                stoch_base_stats = stats_dict
+            else:
+                stoch_shaped_stats = stats_dict
+
+    performance_data = [det_base_stats,det_shaped_stats,stoch_base_stats,stoch_shaped_stats]
     # Define the columns we want to compare
     headers = [
-        "Policy", "Reward Shape", "Mean Reward", "Crash Rate", 
-        "Success Rate", "Avg Descent Vel", "Avg Tilt"
+        "metric",
+        f"Deterministic/Base Reward",f"Deterministic/Shaped Reward",
+        f"Stochastic/Base Reward",f"Stochastic/Shaped Reward"
     ]
     
     # Create the header row
@@ -462,16 +477,28 @@ def format_telemetry_as_table(performance_data: list[dict]):
         "| " + " | ".join(["---"] * len(headers)) + " |"
     ]
 
-    for run in performance_data:
+    key_list = [
+        "mean_reward",
+        "median_reward",
+        "std_reward",
+        "mean_ep_length",
+        "reward_success_rate",
+        "position_success_rate",
+        "crash_rate",
+        "avg_x_position",
+        "avg_descent_velocity",
+        "avg_tilt_angle",
+        "vertical_stability_index",
+        "horizontal_stability_index"
+        ]
+    for key in key_list:
         # Pre-calculate/format values to reduce token noise
         row = [
-            run.get("policy_behavior", "N/A"),
-            run.get("reward_shape", "N/A"),
-            f"{run.get('mean_reward', 0):.1f}",
-            f"{run.get('crash_rate', 0):.1%}",  # Format as percentage
-            f"{run.get('position_success_rate', 0):.1%}",
-            f"{run.get('avg_descent_velocity', 0):.4f}",
-            f"{run.get('avg_tilt_angle', 0):.4f}"
+            key,
+            f"{det_base_stats[key]}",
+            f"{det_shaped_stats[key]}",
+            f"{stoch_base_stats[key]}",
+            f"{stoch_shaped_stats[key]}"
         ]
         table.append("| " + " | ".join(row) + " |")
 

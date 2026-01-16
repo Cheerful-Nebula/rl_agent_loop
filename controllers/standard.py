@@ -1,14 +1,15 @@
 import argparse
 import ollama
-from datetime import datetime 
+from datetime import datetime, timedelta 
 import warnings
+import time
 import os
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation import CodeValidator
+from src.code_validation_experimental import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
@@ -20,6 +21,8 @@ MAX_RETRIES = 5
 
 
 def run_agentic_improvement(iteration):
+    # For catching excution time at the end 
+    start_time = time.perf_counter()
     # 1. Initialize Workspace
     ws = ExperimentWorkspace()
     cognition_json_path = ws.get_path("cognition_json", iteration, "cognition_record.json")
@@ -36,13 +39,9 @@ def run_agentic_improvement(iteration):
         return
 
     # B. The code that produced those metrics (Previous Iteration)
-    if iteration == 1:
-        print("🌱 Loading Virtual Seed (Template) for Iteration 1 analysis.")
-        current_code = Config.INITIAL_TEMPLATE
-    else:
-        prev_code_path = ws.get_path("code", iteration - 1, "reward.py")
-        with open(prev_code_path, "r") as f:
-            current_code = f.read()
+    prev_code_path = ws.get_path("code", iteration - 1, "reward.py")
+    with open(prev_code_path, "r") as f:
+        current_code = f.read()
 
 
     # C. Training Dynamics (Tensorboard Summary)
@@ -61,7 +60,7 @@ def run_agentic_improvement(iteration):
     # Build Prompt using our Prompt Builder
     diag_role, diag_task = prompts.build_diagnosis_prompt(
         Config.analyst_template,
-        config_list=metrics,
+        metrics_json=metrics,
         current_code=current_code,
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
@@ -289,6 +288,8 @@ def run_agentic_improvement(iteration):
     # Save the per-iteration JSON of LLM cognition
     save_cognition_iteration(cognition_iter, cognition_json_path)
 
+    elapsed_time =time.perf_counter()-start_time
+    print(f"Execution took: {timedelta(seconds=elapsed_time)}")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--iteration", type=int, required=True)

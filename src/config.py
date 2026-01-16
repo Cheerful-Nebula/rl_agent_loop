@@ -28,21 +28,21 @@ class Config:
         'repeat_penalty': 1.00 # No penalty to allow code structure
     }
     # gpt_oss has 3 thinking levels : low, medium, high
-    gpt_think_level = "medium"
+    gpt_think_level = "high"
     # 4. Prompt Templates
     analyst_role = "rl_researcher"
     analyst_task = "diagnose_agent_v02"
     analyst_template = (analyst_role, analyst_task)
  
-    code_zero_role = "coder"
-    code_zero_task = "initial_shaping"
+    code_zero_role = "coder_v03"
+    code_zero_task = "initial_shaping_v03"
     code_zero_template = (code_zero_role, code_zero_task)
 
-    code_gen_role = "coder"
+    code_gen_role = "coder_v03"
     code_gen_task = "implement_plan_v02"
     code_gen_template = (code_gen_role, code_gen_task)
 
-    code_fix_role = "coder"
+    code_fix_role = "coder_v03"
     code_fix_task = "fix_code"
     code_fix_template = (code_fix_role, code_fix_task)
 

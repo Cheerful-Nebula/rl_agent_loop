@@ -31,6 +31,24 @@ def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current
     # Load RL Researcher persona
     system_role = loader.load_template("roles", "analyst", template[0])
     performance_table= format_telemetry_as_table(metrics_json["performance"])
+    key_list = [
+        "mean_reward",
+        "median_reward",
+        "std_reward",
+        "mean_ep_length",
+        "reward_success_rate",
+        "position_success_rate",
+        "crash_rate",
+        "avg_x_position",
+        "avg_descent_velocity",
+        "avg_tilt_angle",
+        "vertical_stability_index",
+        "horizontal_stability_index"
+        ]
+    for stats_dict in metrics_json:
+        for key in key_list:
+            if key in stats_dict["performance"].keys():
+                del stats_dict["performance"][key]
     # Format the JSON blob for the template
     metrics_json_str = json.dumps(metrics_json, indent=4)
 
