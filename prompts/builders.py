@@ -45,9 +45,9 @@ def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current
         "vertical_stability_index",
         "horizontal_stability_index"
         ]
-    for stats_dict in metrics_json:
+    for stats_dict in metrics_json["performance"]:
         for key in key_list:
-            if key in stats_dict["performance"].keys():
+            if key in metrics_json["performance"][stats_dict].keys():
                 del stats_dict["performance"][key]
     # Format the JSON blob for the template
     metrics_json_str = json.dumps(metrics_json, indent=4)

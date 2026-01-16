@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation_experimental import CodeValidator
+from src.code_validation import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
