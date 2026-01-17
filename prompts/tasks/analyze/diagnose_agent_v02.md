@@ -20,14 +20,16 @@ These four configurations form a diagnostic matrix that isolates the effects of 
 
 ## Data Provided
 ### Agent's Performance Summary: Contrast Deterministic vs. Stoachastic Policy crossed with Base vs. Shaped Reward
-* Base Reward : base_reward = original_reward if (terminated and abs(original_reward) >= 100) else 0.0 
-* Spare Reward Problem : Agent only receives a singal at terminal state, +100 for Landing or -100 for Crashing
+* Spare Reward Problem : Agent only receives a signal at terminal state, +100 for Landing or -100 for Crashing
 
 ### Performance Table
-{performance_table}
 ```json
 {configuration_json}
 ```
+{performance_table}
+
+{training_table}
+
 ```python
 {current_code}
 ```

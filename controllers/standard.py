@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation import CodeValidator
+from src.code_validation_v03 import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
@@ -75,7 +75,7 @@ def run_agentic_improvement(iteration):
                 ],
                 options = Config.analyst_options)
         
-        diagnosis_plan = response['message']['content']
+        plan_raw = response['message']['content']
  
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
@@ -112,11 +112,63 @@ def run_agentic_improvement(iteration):
         prompt_template_roles=f"{Config.analyst_template[0]}.md",
         prompt_template_tasks=f"{Config.analyst_template[1]}.md",)
     # =========================================================
-    # PHASE 2: IMPLEMENTATION (WITH SAFETY NET)
+    # PHASE 2: Convert Raw Analysis to Structured Output
     # =========================================================
-    print("🔵 AGENT: Phase 2 - Writing Code...")
+    print("🔵 AGENT: Phase 2 - Formatting Analysis...")
     
-    code_role, code_task = prompts.build_coding_prompt(Config.code_gen_template, diagnosis_plan, current_code)
+    # Build Prompt using our Prompt Builder
+    format_role, format_task = prompts.build_formatter_prompt(Config.formatter_template,plan_raw)
+    
+    try:
+        response2 = ollama.chat(
+            model=MODEL_NAME, 
+            messages=[
+                {'role': 'system', 'content': format_role},
+                {'role': 'user', 'content': format_task}
+                ],
+                options = Config.formatter_options)
+        
+        plan_formatted = response2['message']['content']
+ 
+    except Exception as e:
+        print(f"❌ Phase 1 Error: {e}")
+        return
+
+    # Saving input prompts and responses as easy to read Markdown documents for later
+    cognition_list.append((f"LLM Input: `format_role` using {Config.formatter_template[0]}.md",format_role))
+    cognition_list.append((f"LLM Input: `format_task` using {Config.formatter_template[1]}.md",format_task))
+    cognition_list.append(("LLM Output: plan",response2['message']['content']))
+
+    # Save ChatResponse Data to CSV
+    append_chatresponse_row(
+        csv_path =ws.containers['cognition_csv'], 
+        model_name=MODEL_NAME, 
+        response=response2,
+        run_id = f"Iter_{iteration:02d}_format", 
+        iteration=iteration, 
+        phase="Phase_2", 
+        prompt_type="formatting",
+        prompt_template_roles=f"{Config.formatter_template[0]}.md",
+        prompt_template_tasks=f"{Config.formatter_template[1]}.md",
+        cognition_path=cognition_json_path)
+
+    # Saves full prompts/responses of LLM to JSON, One JSON per iteration
+    add_cognition_call(
+        cognition_iter=cognition_iter,
+        response=response2,
+        run_id=f"Iter_{iteration:02d}_format",
+        phase="formatting",
+        system_role=format_role,
+        user_task=format_task,
+        options=Config.analyst_options,
+        prompt_template_roles=f"{Config.formatter_template[0]}.md",
+        prompt_template_tasks=f"{Config.formatter_template[1]}.md",)
+    # =========================================================
+    # PHASE 3: IMPLEMENTATION (WITH SAFETY NET)
+    # =========================================================
+    print("🔵 AGENT: Phase 3 - Writing Code...")
+    
+    code_role, code_task = prompts.build_coding_prompt(Config.code_gen_template, plan_formatted, current_code)
 
     # Initialize Delta Debugging Trackers / Validation Loop
     previous_attempt_code = current_code
@@ -125,7 +177,7 @@ def run_agentic_improvement(iteration):
 
     # Initial Code Generation Attempt
     try:
-        response2 = ollama.chat(
+        response3 = ollama.chat(
             model=MODEL_NAME,
             messages=[
             {'role': 'system', 'content': code_role},
@@ -136,7 +188,7 @@ def run_agentic_improvement(iteration):
         append_chatresponse_row(
             csv_path =ws.containers['cognition_csv'], 
             model_name=MODEL_NAME, 
-            response=response2,
+            response=response3,
             run_id = f"Iter_{iteration:02d}_code", 
             iteration=iteration, 
             phase="Phase_2", 
@@ -148,7 +200,7 @@ def run_agentic_improvement(iteration):
         # Saves full prompts/responses of LLM to JSON, One JSON per iteration
         add_cognition_call(
             cognition_iter=cognition_iter,
-            response=response2,
+            response=response3,
             run_id=f"Iter_{iteration:02d}_code",
             phase="code_generation",
             system_role=code_role,
@@ -158,11 +210,11 @@ def run_agentic_improvement(iteration):
             prompt_template_tasks=f"{Config.code_gen_template[1]}.md")
 
         # Saving input prompts and responses as easy to read Markdown documents for later
-        cognition_list.append((f"LLM Input: `code_role` from {Config.code_gen_template[0]}.md", code_role))
-        cognition_list.append((f"LLM Input: `code_task` from {Config.code_gen_template[1]}.md", code_task))
-        cognition_list.append(("LLM Output: `code_response`", response2['message']['content']))
+        cognition_list.append((f"LLM Input: {Config.code_gen_template[0]}.md", code_role))
+        cognition_list.append((f"LLM Input: {Config.code_gen_template[1]}.md", code_task))
+        cognition_list.append(("LLM Output:", response3['message']['content']))
 
-        clean_code = utils.extract_python_code(response2['message']['content'])
+        clean_code = utils.extract_python_code(response3['message']['content'])
         
         validator = CodeValidator(clean_code)
         is_valid, feedback = validator.validate_static()

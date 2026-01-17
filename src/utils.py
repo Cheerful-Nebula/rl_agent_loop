@@ -441,16 +441,16 @@ def get_hardware_config():
 
 # -----------------------------------------------------------
 # Converting evaluations metrics dictionary to markdown table
-# Hoping for improved comprehensision for analysis
+# Hoping for improved comprehensision of LLM's analysis
 # ------------------------------------------------------------
-def format_telemetry_as_table(stats_list: list[dict]):
+def performance_telemetry_as_table(stats_list: list[dict]):
     """
     Converts the list of performance dicts into a Markdown table for better LLM reasoning.
     """
     if not stats_list:
         return "No telemetry data available."
 
-     
+    # To guaruntee the correct order of dicts, so metric values are in correct column
     for stats_dict in stats_list:
         if stats_dict["policy_behavior"] == "Deterministic":
             if stats_dict["reward_shape"] == "Base":
@@ -463,7 +463,7 @@ def format_telemetry_as_table(stats_list: list[dict]):
             else:
                 stoch_shaped_stats = stats_dict
 
-    performance_data = [det_base_stats,det_shaped_stats,stoch_base_stats,stoch_shaped_stats]
+
     # Define the columns we want to compare
     headers = [
         "metric",
@@ -499,6 +499,49 @@ def format_telemetry_as_table(stats_list: list[dict]):
             f"{det_shaped_stats[key]}",
             f"{stoch_base_stats[key]}",
             f"{stoch_shaped_stats[key]}"
+        ]
+        table.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(table)
+
+def training_telemetry_as_table(stats_list: list[dict]):
+    """
+    Converts the list of performance dicts into a Markdown table for better LLM reasoning.
+    """
+    if not stats_list:
+        return "No telemetry data available."
+
+     
+    # Define the columns we want to compare
+    headers = [
+        "metric", "start","median","mean","end"
+    ]
+    
+    # Create the header row
+    table = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |"
+    ]
+
+    key_list = [
+        "policy_gradient_loss",
+        "approx_kl",
+        "loss",
+        "explained_variance",
+        "clip_range",
+        "entropy_loss",
+        "value_loss",
+        "clip_fraction",
+        "learning_rate"
+        ]
+    for key in key_list:
+        # Pre-calculate/format values to reduce token noise
+        row = [
+            key,
+            f"{stats_list[key]["start"]}",
+            f"{stats_list[key]["median"]}",
+            f"{stats_list[key]["mean"]}",
+            f"{stats_list[key]["end"]}"
         ]
         table.append("| " + " | ".join(row) + " |")
 

@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation import CodeValidator
+from src.code_validation_v03 import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
@@ -52,7 +52,8 @@ def get_inital_shaping():
     cognition_list = []
     cognition_list.append((f"LLM Input: `role` using {Config.code_zero_template[0]}.md",role))
     cognition_list.append((f"LLM Input: `task` using {Config.code_zero_template[1]}.md",task))
-    cognition_list.append(("LLM Output: thinking",response['message']['thinking']))
+    if think_flag:
+        cognition_list.append(("LLM Output: thinking",response['message']['thinking']))
     cognition_list.append(("LLM Output: plan",response['message']['content']))
 
     append_chatresponse_row(
@@ -89,10 +90,14 @@ def get_inital_shaping():
             print("*"*20)
             print("Initial generated code failed runtime analysis")
             print("*"*20)
+            print(f"{feedback}")
+            print("*"*20)
 
     else:
         print("*"*20)
         print("Initial generated code failed static analysis")
+        print("*"*20)
+        print(f"{feedback}")
         print("*"*20)
 
     

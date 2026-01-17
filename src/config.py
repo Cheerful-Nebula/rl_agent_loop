@@ -17,10 +17,16 @@ class Config:
     analyst_options={
         'num_ctx': 16384,      # M4 Max can handle this easily
         'num_predict': 4000,   # Prevent cutoff
-        'temperature': 0.5,    # Balance creativity/precision
-        'top_p': 0.9,
+        'temperature': 0.65,    # Balance creativity/precision
+        'top_p': 0.8,
     }
-    # For Phase 2: Coder (Implementation)
+    # For Phase 2: Formatter (Process Plan)
+    formatter_options={
+        'num_ctx': 16384,
+        'num_predict': 4000,
+        'temperature': 0.1,  
+    }
+    # For Phase 3: Coder (Implementation)
     coder_options={
         'num_ctx': 16384,
         'num_predict': 4000,
@@ -29,11 +35,16 @@ class Config:
     }
     # gpt_oss has 3 thinking levels : low, medium, high
     gpt_think_level = "high"
+
     # 4. Prompt Templates
     analyst_role = "rl_researcher"
     analyst_task = "diagnose_agent_v02"
     analyst_template = (analyst_role, analyst_task)
  
+    formatter_role = "formatter_v01"
+    formatter_task = "format_v01"
+    formatter_template = (formatter_role, formatter_task)
+
     code_zero_role = "coder_v03"
     code_zero_task = "initial_shaping_v03"
     code_zero_template = (code_zero_role, code_zero_task)

@@ -1,22 +1,18 @@
 from . import loader
 import json
-from src.utils import format_telemetry_as_table
+from src.utils import performance_telemetry_as_table,training_telemetry_as_table
 def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current_code, long_term_memory, short_term_history)-> tuple[str,str]:
     """
     Builds a multi-configuration LLM diagnosis prompt.
 
     Parameters
     ----------
-    config_list : list[dict]
+    metrics_json : list[dict]
         A list where each element is:
         {
-            "config_id": str,
-            "meta": {...},
-            "metrics": {...},
-            "diagnostics": {...},
-            "training_summary": {...}
+
         }
-        You can include ANY number of configurations.
+
     
     current_code : str
         Current reward function code.
@@ -30,25 +26,21 @@ def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current
 
     # Load RL Researcher persona
     system_role = loader.load_template("roles", "analyst", template[0])
-    performance_table= format_telemetry_as_table(metrics_json["performance"])
-    key_list = [
-        "mean_reward",
-        "median_reward",
-        "std_reward",
-        "mean_ep_length",
-        "reward_success_rate",
-        "position_success_rate",
-        "crash_rate",
-        "avg_x_position",
-        "avg_descent_velocity",
-        "avg_tilt_angle",
-        "vertical_stability_index",
-        "horizontal_stability_index"
-        ]
-    for stats_dict in metrics_json["performance"]:
-        for key in key_list:
-            if key in metrics_json["performance"][stats_dict].keys():
-                del stats_dict["performance"][key]
+    metrics_json["n_updates"] = metrics_json["training_dynamics"]["n_updates"]
+
+    # Converting data from JSON to formated markdown tables
+    performance_table= performance_telemetry_as_table(metrics_json["performance"])
+    training_table= training_telemetry_as_table(metrics_json["training_dynamics"])
+
+    # Deleteing unneccesary keys, such as those that were just converted to markdown
+    del metrics_json["performance"]
+    del metrics_json["training_dynamics"]
+    del metrics_json["timestamp"]
+    del metrics_json["source_code_path"]
+    metrics_json["timesteps"]=metrics_json["config"]["total_timesteps"]
+    metrics_json["num_updates"]=metrics_json["n_updates"]["total"]
+    del metrics_json["config"]
+    del metrics_json["n_updates"]
     # Format the JSON blob for the template
     metrics_json_str = json.dumps(metrics_json, indent=4)
 
@@ -58,6 +50,7 @@ def build_diagnosis_prompt(template: tuple[str,str], metrics_json: json, current
     # Build user task
     user_task = task_template.format(
         performance_table = performance_table,
+        training_table=training_table,
         configuration_json=metrics_json_str,
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
@@ -93,5 +86,15 @@ def build_fix_prompt(template: tuple[str,str],invalid_code, feedback):
     task = task_raw.format(
         clean_code=invalid_code,
         feedback=feedback
+    )
+    return role, task
+
+def build_formatter_prompt(template: tuple[str,str], raw_plan):
+    """Constructs prompts for generating initial reward shaping function."""
+    role = loader.load_template("roles", "formatter", template[0])
+    
+    task_raw = loader.load_template("tasks", "to_format", template[1])
+    task = task_raw.format(
+        raw_plan = raw_plan
     )
     return role, task
