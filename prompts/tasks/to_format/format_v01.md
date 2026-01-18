@@ -7,7 +7,8 @@ Convert the following raw RL researcher analysis into structured JSON format wit
 - Your task is to structure into JSON format with keys: analysis, plan, lesson, hyperparameters 
 1. analysis: This is the technical, and thorough assesment of the PPO agent's performance and training dynamics
 2. plan: This is reccomendation modifications to the reward funcation the python developer will need in hopes of improving the agent's performance 
-3. lesson:
+3. lesson: What the researcher learned, good or bad, that should be avoided or repeated in the future?
+4. hyperparameters: The specific hyperparameter changes suggested
 
 Raw researcher output:
 {raw_plan}
