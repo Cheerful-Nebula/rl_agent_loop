@@ -61,7 +61,7 @@ class ExperimentWorkspace:
         }
         # Only print this once per run to keep logs clean
         # (You can suppress this if it gets too noisy in the loop)
-        # print(f"📍 Workspace Active: {self.model_root_path}")
+        print(f"📍 Workspace Active: {self.model_root_path}")
 
     def _create_directories(self):
         """Recursively creates the directory tree."""
@@ -81,7 +81,24 @@ class ExperimentWorkspace:
         return self.dirs[category] / clean_filename
 
     # --- DATA HANDOFF HELPERS ---
-
+    def get_relative_path(self, category, iteration, filename):
+        """
+        Returns the path relative to the project root (e.g., 'experiments/Campaign/Code/file.py').
+        Used to map Mac paths to Linux paths securely.
+        """
+        full_path = self.get_path(category, iteration, filename)
+        
+        # We assume the script is running from the project root (where 'experiments' folder lives)
+        try:
+            return full_path.relative_to(os.getcwd())
+        except ValueError:
+            # Fallback: manually strip everything before "experiments"
+            parts = full_path.parts
+            if "experiments" in parts:
+                idx = parts.index("experiments")
+                return Path(*parts[idx:])
+            return full_path
+        
     def save_metrics(self, iteration, metrics_dict):
         """Saves a JSON report card for a specific iteration."""
         filepath = self.get_path("telemetry_raw", iteration, "metrics.json")

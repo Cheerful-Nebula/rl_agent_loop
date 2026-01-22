@@ -1,17 +1,20 @@
 import os
 import platform
+from dotenv import load_dotenv
 
+# Load variables from .env file into the environment
+load_dotenv()
 class Config:
-    # 1. Experiment Settings
+    # 1. Experiment Settings ###################################################################
     ENV_ID = "LunarLander-v3"
     TOTAL_TIMESTEPS = int(os.getenv("TOTAL_TIMESTEPS", 50000))
     ALGORITHM = "PPO"
     
-    # 2. Dynamic Identity (Captured from Bash)
+    # 2. Dynamic Experiment Directory Name ####################################################
     LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5-coder")
     CAMPAIGN_TAG = os.getenv("CAMPAIGN_TAG", "Debug_Run")
 
-    # 3. Code Generation Settings
+    # 3. Code Generation Settings ###############################################################
     RETENTION_MEMORY = 3 # How many past iterations to remember in detail
     # For Phase 1: Researcher (Diagnosis)
     analyst_options={
@@ -36,7 +39,7 @@ class Config:
     # gpt_oss has 3 thinking levels : low, medium, high
     gpt_think_level = "high"
 
-    # 4. Prompt Templates
+    # 4. LLM Prompt Templates ###################################################################
     analyst_role = "rl_researcher"
     analyst_task = "diagnose_agent_v02"
     analyst_template = (analyst_role, analyst_task)
@@ -57,3 +60,19 @@ class Config:
     code_fix_task = "fix_code"
     code_fix_template = (code_fix_role, code_fix_task)
 
+    # 5. Network Credentials ################################################
+    # Saved in .env, raw IPs never see github
+
+    # NETWORK CONFIGS (Loaded securely)
+    # The second argument is a default fallback if the .env value is missing
+    LINUX_IP = os.getenv("LINUX_IP")
+    LINUX_USER = os.getenv("LINUX_USER")
+    SSH_KEY_PATH = os.path.expanduser(os.getenv("SSH_KEY_PATH"))
+    REMOTE_PROJECT_ROOT = os.getenv("REMOTE_PROJECT_ROOT")
+    REMOTE_PYTHON_BIN = os.getenv("REMOTE_PYTHON_BIN")
+
+    # Validation (Optional but recommended)
+    @classmethod
+    def validate_network_config(cls):
+        if not cls.REMOTE_PROJECT_ROOT or not cls.REMOTE_PYTHON_BIN:
+            raise ValueError("❌ Missing Remote Configs! Please set REMOTE_PROJECT_ROOT in your .env file.")

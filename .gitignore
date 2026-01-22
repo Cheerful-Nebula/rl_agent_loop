@@ -1,11 +1,12 @@
 # Ignore the virtual environment
+.env
 venv/
 __pycache__/
 *.pyc
 
 # Ignore output logs and models (they are too big)
 experiments/
-.misc/
+misc/
 logs/
 models/
 plots/
@@ -16,6 +17,7 @@ reward_shaping.py
 unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh
+*joke*
 *_old.py
 inspect_model.py
 sandbox.ipynb
