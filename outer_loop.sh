@@ -41,6 +41,18 @@ case "$TAG" in
     SELECTED_CONTROLLER="controllers/standard.py"
     ;;
 esac
+# 🚀 LOGIC SWITCH 2: Select Training Engine based on Tag
+# We check if the tag contains the string "remote"
+if [[ "$TAG" == *"remote"* ]]; then
+    echo "📡 ENGINE: Distributed Training (Mac -> Linux)"
+    # This script runs on Mac but talks to Linux
+    TRAINING_SCRIPT="src/train_remote.py"
+else
+    echo "💻 ENGINE: Local Training (Mac Only)"
+    # This script runs the PPO math locally
+    TRAINING_SCRIPT="train.py"
+fi
+
 # Format steps for directory naming (e.g. 500000 -> 500k, 1200000 -> 1.2M)
 format_steps() {
   local n="$1"
@@ -98,7 +110,7 @@ for model in "${MODELS[@]}"; do
   python3 controllers/initial_shaping.py 
 
   # 3. RUN THE INNER LOOP
-  ./inner_loop.sh "$ITERATIONS" "$SELECTED_CONTROLLER"
+  ./inner_loop.sh "$ITERATIONS" "$SELECTED_CONTROLLER" "$TRAINING_SCRIPT"
 
   # 4. (Optional) GENERATE SUMMARY PLOT
   # python3 src/plot_campaign_summary.py

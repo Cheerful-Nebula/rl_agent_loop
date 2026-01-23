@@ -1,30 +1,34 @@
+# src/remote_ops.py
 import subprocess
 import os
 import sys
 
-class RemoteTrainer:
+class RemoteManager:
     def __init__(self, hostname, username, ssh_key_path, remote_project_root):
         """
-        Uses SHELL execution to bypass macOS Python Sandbox restrictions.
+        A pure utility class for handling SSH/SCP operations.
+        It knows 'how' to connect, but doesn't care 'what' you are running.
         """
         self.target = f"{username}@{hostname}"
         self.key_path = os.path.expanduser(ssh_key_path)
         self.remote_root = remote_project_root
         
-        # Build the flags string once
+        # Standard SSH flags for non-interactive automation
+        # -4: Force IPv4
+        # -o BatchMode=yes: Don't ask for passwords (fail if key missing)
+        # -o StrictHostKeyChecking=no: Don't block on new fingerprints
         self.flags = f"-4 -i {self.key_path} -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
     def run_command(self, command):
         """
-        Runs a generic command on Linux and returns the result.
-        Useful for diagnostics or checking if a file exists.
+        Executes a command on the Linux machine and waits for it to finish.
+        Best for quick checks (e.g., "does file exist?").
         
-        Returns: (exit_code, stdout_str, stderr_str)
+        Returns: (exit_code, stdout_string, stderr_string)
         """
-        # Wrap the command in quotes for SSH
+        # Wrap command in quotes to pass it as a single argument to SSH
         full_cmd = f"ssh {self.flags} {self.target} \"{command}\""
         
-        # Run it safely using subprocess
         result = subprocess.run(
             full_cmd, 
             shell=True, 
@@ -34,36 +38,68 @@ class RemoteTrainer:
         )
         return result.returncode, result.stdout.strip(), result.stderr.strip()
 
-    def connect(self):
+    def stream_command(self, command, env_vars=None):
         """
-        Verifies connection using the system shell.
-        """
-        print(f"🔌 Testing connection to {self.target} (Shell Mode)...")
-        code, out, err = self.run_command("echo 'Connection OK'")
+        Executes a command and streams the output line-by-line to the Mac console.
+        Best for long-running jobs (e.g., Training) so the terminal doesn't freeze.
         
-        if code == 0:
-            print("✅ Connection Established.")
-        else:
-            print(f"❌ Connection Failed. Exit Code: {code}")
-            print(f"   Error: {err}")
-            raise ConnectionError(f"Could not connect to {self.target}")
+        Args:
+            command: The command string to run on Linux.
+            env_vars: Optional dict of environment variables to inject (e.g., {'TAG': 'Remote'}).
+        """
+        # 1. Prepend Environment Variables if provided
+        prefix = ""
+        if env_vars:
+            # Result: "export VAR1='Val1'; export VAR2='Val2'; "
+            prefix = " ".join([f"export {k}='{v}';" for k, v in env_vars.items()])
+        
+        # 2. Construct the full SSH command
+        # We cd to remote_root first to ensure relative paths work
+        remote_cmd_str = f"{prefix} cd {self.remote_root} && {command}"
+        full_cmd = f"ssh {self.flags} {self.target} \"{remote_cmd_str}\""
+        
+        print(f"📡 [Stream] Executing on {self.target}...")
 
-    def close(self):
-        # Stateless connection, nothing to close.
-        pass 
+        # 3. Open the process
+        process = subprocess.Popen(
+            full_cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        # 4. Stream stdout line by line
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                # Print exactly what Linux sends, stripping double newlines
+                print(f"   [Linux]: {output.rstrip()}")
+
+        # 5. Check final status
+        if process.poll() == 0:
+            return True
+        else:
+            # Capture any remaining error text
+            err = process.stderr.read()
+            print(f"❌ Remote Command Failed: {err}")
+            return False
 
     def sync_file(self, local_path, relative_remote_path):
         """
-        Uploads file using 'scp' via Shell.
+        Uploads a local file to the Linux machine (Mac -> Linux).
         """
+        # Clean paths
         remote_full_path = f"{self.remote_root}/{relative_remote_path}".replace("//", "/")
         remote_dir = os.path.dirname(remote_full_path)
 
-        # 1. Create Folder first
+        # 1. Ensure the destination folder exists
         self.run_command(f"mkdir -p {remote_dir}")
 
-        # 2. Upload
-        print(f"🚀 Uploading: {os.path.basename(local_path)} -> Linux")
+        # 2. SCP Upload
+        print(f"🚀 Uploading: {os.path.basename(local_path)}")
         cmd = f"scp {self.flags} \"{local_path}\" {self.target}:{remote_full_path}"
         
         try:
@@ -74,7 +110,7 @@ class RemoteTrainer:
 
     def retrieve_file(self, relative_remote_path, local_destination):
         """
-        Downloads file using 'scp' via Shell.
+        Downloads a file from the Linux machine (Linux -> Mac).
         """
         remote_full_path = f"{self.remote_root}/{relative_remote_path}".replace("//", "/")
         
@@ -88,37 +124,3 @@ class RemoteTrainer:
         except subprocess.CalledProcessError:
             print(f"❌ Remote file not found or download failed.")
             return False
-
-    def run_training_job(self, workspace, iteration, python_bin):
-        """
-        Runs training and streams output.
-        """
-        env_setup = f"export CAMPAIGN_TAG='{workspace.campaign_tag}'; export LLM_MODEL='{workspace.raw_model_name}';"
-        remote_cmd = f"{env_setup} cd {self.remote_root} && {python_bin} -u train.py --iteration {iteration}"
-        
-        print(f"🏋️  [Remote] Starting Training Iteration {iteration}...")
-        
-        full_cmd = f"ssh {self.flags} {self.target} \"{remote_cmd}\""
-        
-        process = subprocess.Popen(
-            full_cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        # Stream output line by line
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                print(f"   [Linux]: {output.strip()}")
-
-        if process.poll() == 0:
-            print("✅ Remote Training Finished.")
-            return True
-        else:
-            print(f"❌ Remote Training Failed:\n{process.stderr.read()}")
-            raise RuntimeError("Remote script crashed.")

@@ -6,7 +6,8 @@ set -euo pipefail
 MAX_LOOPS=${1:-10}
 # 2. Capture the controller script name (default to standard.py)
 CONTROLLER_SCRIPT=${2:-"controllers/standard.py"}
-
+# 3. Capture the training script name (default to train.py)
+TRAINING_SCRIPT=${3:-"train.py"}
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -23,7 +24,7 @@ do
 
     # 1. Train the Agent
     echo -e "${GREEN}[Step 1] Training Agent (Iteration $i)...${NC}"
-    python3 train.py --iteration "$i"
+    python3 "$TRAINING_SCRIPT" --iteration "$i"
 
     # 2. Improve the Code
     echo -e "${GREEN}[Step 2] Designing New Reward Function (Iteration $i)...${NC}"
