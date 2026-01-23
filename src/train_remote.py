@@ -37,7 +37,8 @@ def run_remote_cycle(iteration):
     # and package it into a dictionary to inject into the Linux session.
     env_vars = {
         "CAMPAIGN_TAG": os.environ.get("CAMPAIGN_TAG", "Debug_Campaign"),
-        "LLM_MODEL": os.environ.get("LLM_MODEL", "Debug_Model")
+        "LLM_MODEL": os.environ.get("LLM_MODEL", "Debug_Model"),
+        "TOTAL_TIMESTEPS": os.environ.get("TOTAL_TIMESTEPS", "50000")
     }
 
     # The command is simple because the Manager handles the messy SSH parts.
