@@ -17,7 +17,7 @@ class RemoteManager:
         # -4: Force IPv4
         # -o BatchMode=yes: Don't ask for passwords (fail if key missing)
         # -o StrictHostKeyChecking=no: Don't block on new fingerprints
-        self.flags = f"-4 -i {self.key_path} -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        self.flags = f"-4 -i {self.key_path} -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
     def run_command(self, command):
         """
