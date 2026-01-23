@@ -63,13 +63,13 @@ class Config:
     # 5. Network Credentials ################################################
     # Saved in .env, raw IPs never see github
 
-    # NETWORK CONFIGS (Loaded securely)
-    # The second argument is a default fallback if the .env value is missing
-    LINUX_IP = os.getenv("LINUX_IP")
-    LINUX_USER = os.getenv("LINUX_USER")
-    SSH_KEY_PATH = os.path.expanduser(os.getenv("SSH_KEY_PATH"))
-    REMOTE_PROJECT_ROOT = os.getenv("REMOTE_PROJECT_ROOT")
-    REMOTE_PYTHON_BIN = os.getenv("REMOTE_PYTHON_BIN")
+    # NETWORK CONFIGURATION
+    LINUX_IP = os.getenv("LINUX_IP", "127.0.0.1")
+    LINUX_USER = os.getenv("LINUX_USER", "user")
+    ssh_env = os.getenv("SSH_KEY_PATH", "") 
+    SSH_KEY_PATH = os.path.expanduser(ssh_env)
+    REMOTE_PROJECT_ROOT = os.getenv("REMOTE_PROJECT_ROOT", "")
+    REMOTE_PYTHON_BIN = os.getenv("REMOTE_PYTHON_BIN", "")
 
     # Validation (Optional but recommended)
     @classmethod

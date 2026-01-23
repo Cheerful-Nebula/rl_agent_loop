@@ -46,7 +46,7 @@ esac
 if [[ "$TAG" == *"remote"* ]]; then
     echo "📡 ENGINE: Distributed Training (Mac -> Linux)"
     # This script runs on Mac but talks to Linux
-    TRAINING_SCRIPT="src/train_remote.py"
+    TRAINING_SCRIPT="train_remote.py"
 else
     echo "💻 ENGINE: Local Training (Mac Only)"
     # This script runs the PPO math locally
