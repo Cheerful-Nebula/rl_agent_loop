@@ -13,7 +13,7 @@
     - `avg_tilt_angle`: Average tilt angle over the episode (closer to 0 is better)
     - `vertical_stability_index`: Standard deviation of vertical position over the episode (lower is better)
     - `horizontal_stability_index`: Standard deviation of horizontal position over the episode (lower is better)
-- Be outspoken about any missing information which is hindering your analysis, you must then give reccomendations on what you need provided to you next time for a complete analysis
+
 
 ## The 4 Diagnostic Views
 These four configurations form a diagnostic matrix that isolates the effects of reward design and policy entropy. Analyze them comparatively to determine what aspects of the agent’s performance arise from shaping, from stochasticity, or from genuine learning. Use differences across configurations to infer failure points, robustness issues, and concrete improvements to PPO training.

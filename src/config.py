@@ -19,34 +19,38 @@ class Config:
     # For Phase 1: Researcher (Diagnosis)
     analyst_options={
         'num_ctx': 16384,      # M4 Max can handle this easily
-        'num_predict': 4000,   # Prevent cutoff
+        'num_predict': 8000,   # Prevent cutoff
         'temperature': 0.65,    # Balance creativity/precision
         'top_p': 0.8,
     }
     # For Phase 2: Formatter (Process Plan)
     formatter_options={
         'num_ctx': 16384,
-        'num_predict': 4000,
-        'temperature': 0.1,  
+        'num_predict': 5000,
+        'temperature': 0.0,  
     }
     # For Phase 3: Coder (Implementation)
     coder_options={
         'num_ctx': 16384,
-        'num_predict': 4000,
+        'num_predict': 5000,
         'temperature': 0.1,    # Strict adherence to syntax
         'repeat_penalty': 1.00 # No penalty to allow code structure
     }
     # gpt_oss has 3 thinking levels : low, medium, high
-    gpt_think_level = "high"
+    gpt_think_level = "low"
 
     # 4. LLM Prompt Templates ###################################################################
     analyst_role = "rl_researcher"
-    analyst_task = "diagnose_agent_v02"
+    analyst_task = "diagnose_agent_v03"
     analyst_template = (analyst_role, analyst_task)
  
     formatter_role = "formatter_v01"
-    formatter_task = "format_v01"
+    formatter_task = "format_v03"
     formatter_template = (formatter_role, formatter_task)
+
+    formatter_fix_role = "formatter_v01"
+    formatter_fix_task = "format_fix"
+    formatter_fix_template = (formatter_role, formatter_task)
 
     code_zero_role = "coder_v03"
     code_zero_task = "initial_shaping_v03"

@@ -23,13 +23,12 @@ The function receives the standard LunarLander state vector:
 [x_pos, y_pos, x_vel, y_vel, angle, ang_vel, leg_1_contact, leg_2_contact]
 ```
 
-### Action Useage information
+### Additional provided information
 
-Additional physics metrics are provided through `info["action_usage"]`:
+Additional information provided in `info` dictionary:
 
-* `fuel_consumed_this_step`: Fuel consumed this step
-* `action_index`: Index of the action taken (0-3)
-* `action_label`: Label of the action taken ("nothin", "left engine", "main engine", "right engine")
+* `info["action_usage"]`: Index of the action taken (0-3)
+* `info["prev_obs]`: Observation Vector from previous `step()` call
 
 ### Task
 

@@ -1,64 +1,51 @@
 # Evaluation Task: Single Agent Diagnostic Report
 
 - You are provided with telemetry for a PPO agent on `LunarLander-v3`. 
-- The agent was evaluated 4 times: Based Reward, Deterministic Behavior (i.e. greedy-epsilon)/Base Reward, Stochastic Behavior/ Shaped Reward, Deterministic Behavior/ Shaped Reward, Stochastic Behavior
-- The agent was evaluate 4 times with the hopes of having a better lens for deciphering better effectiveness of how well the agent can learn the reward signals of the current reward function but also how well that translates to performing the underlying desired task.
-- A controlled descent with minimal tilt in the center (0,0)
-- `reward_success_rate` is number of episodes with reward >= 200 divided by total episodes
-- `pos_success_rate` is number of episodes that land within a radius of 0.1 of the center divided by total episodes
-- `crash_rate` is number of episodes that the lander crashed divided by total number of episodes, where "crash' is assumed when reward is <= -100
-- Be sure to analyze the following diagnostic metrics:
-    - `avg_x_position`: Average horizontal position over the episode (closer to 0 is better)
-    - `avg_descent_velocity`: Average vertical velocity over the episode (closer to 0 is better)
-    - `avg_tilt_angle`: Average tilt angle over the episode (closer to 0 is better)
-    - `vertical_stability_index`: Standard deviation of vertical position over the episode (lower is better)
-    - `horizontal_stability_index`: Standard deviation of horizontal position over the episode (lower is better)
-- Be outspoken about any missing information which is hindering your analysis, you must then give reccomendations on what you need provided to you next time for a complete analysis
+- **The agent was evaluated in 2 distinct configurations** to isolate "Training Signal" from "Task Success":
+    1. **Stochastic Behavior / Shaped Reward:** (The "Teacher") Represents the agent's behavior during training. If this fails, the reward function provides no learning signal.
+    2. **Deterministic Behavior / Base Reward:** (The "Exam") Represents the true objective (Sparse +100/-100). If this fails but the Teacher succeeds, the reward function is misaligned (Reward Hacking).
+- **Goal:** A controlled descent with minimal tilt in the center (0,0).
 
-## The 4 Diagnostic Views
-These four configurations form a diagnostic matrix that isolates the effects of reward design and policy entropy. Analyze them comparatively to determine what aspects of the agent’s performance arise from shaping, from stochasticity, or from genuine learning. Use differences across configurations to infer failure points, robustness issues, and concrete improvements to PPO training.
+**Success Metrics:**
+- `reward_success_rate`: % of episodes with Reward >= 200.
+- `pos_success_rate`: % of episodes landing within 0.1 radius of center.
+- `crash_rate`: % of episodes ending in a crash (Reward <= -100).
 
-## Data Provided
-```json
-{configuration_json}
-```
+**Diagnostic Metrics:**
+- `avg_x_position`: Closer to 0 is better.
+- `avg_descent_velocity`: Closer to 0 is better (controlled descent).
+- `avg_tilt_angle`: Closer to 0 is better.
+- `vertical_stability_index`: Lower std dev is better.
+
+## The 2 Diagnostic Views
+Analyze these two views comparatively to determine if the failure is due to **Learning** (Agent can't optimize the signal) or **Alignment** (Agent optimizes the signal, but the signal doesn't lead to landing).
 
 ## What You Must Produce
 
-As the head RL researcher, you must evaluate the information given to you to assess the agent's performance of performing the desired task and efficacy of learning the reward signals. You are interpreting the results outloud, providing an analysis on how to overcome the shortcomings, lastly you will return the `Reward Function Refinement Plan` which will be passed directly to our top python developer. Have your plan for the python developer be the very last part of your output and be in JSON
+As the Lead RL Researcher, your goal is to synthesize this data into a cohesive narrative and then issue specific directives to your team.
 
-### Reward Function Refinement Plan
+**Part 1: The Diagnosis (Free Thinking)**
+Evaluate the efficacy of the current reward signals. Interpret the results out loud. 
+- Does the **Stochastic/Shaped** performance indicate the agent is learning *anything*? 
+- Does high reward in **Shaped** translate to success in **Base**?
+- Identify the failure mode: "No Signal", "Reward Hacking", or "Optimization Failure".
 
-- In your Future Work section Generate 3 different hypothesis on behavior that may occur from the new reward function and how the outcome of your hypothesis will inform your next `Reward Function Refinement Plan`. Assign a 'Confidence Score' to each based on how robust you think it will be. Include at least one 'experimental' idea with lower confidence scores but higher potential novelty.
+**Part 2: The Directives (The Handoff)**
+You must conclude your report by organizing your findings into three strict categories for downstream implementation. Do not mix them.
 
+### 1. The Coding Plan (For the Python Developer)
 
-### Your Output Format
+* **Focus:** The mathematical structure of the reward function.
+* **Action:** Explicitly state the mathematical formula(s) needed in the reward function to properly steer the agent toward an optimal policy.
+* **CRITICAL REQUIREMENT:** You **MUST** end this section with a single, standalone line in exactly this format:
+  **HYPOTHESIS: [A single sentence predicting the specific metric change, e.g., "Increasing tilt penalty will reduce crash rate by 10%."]**
 
-Your instructions and plan for the python developer must follow the following schema:
+### 2. The Training Configuration (For the Experiment Manager)
 
-```json
+* **Focus:** Changes to the PPO Algorithm or Environment settings.
+* **Include:** Learning Rate, Entropy Coefficients, Timesteps, Batch Size, or Clip Range.
+* **Exclusion:** Do NOT include reward weights here (put those in the Coding Plan).
 
-{{
-  "Analysis": "Your detailed analysis of the agent's performance across the four configurations, highlighting strengths, weaknesses, and insights drawn from the diagnostic metrics.",
-  "Identified Issues": "A summary of the key issues identified in the agent's performance, including any patterns observed across different configurations.",
-  "Recommendations": "Specific recommendations for improving the reward function and training process based on your analysis.",
-  "Reward Function Refinement Plan": {{
-    "Modifications": [
-      {{
-        "Description": "Detailed description of the proposed modification to the reward function.",
-        "Rationale": "Explanation of why this modification is expected to improve performance."
-      }}
-    ],
-    "Implementation Steps": [
-      "Step-by-step instructions for implementing the proposed modifications."
-    ],
-    "Future Work": [
-      {{
-        "Hypothesis": "Description of the hypothesis regarding agent behavior with the new reward function.",
-        "Confidence Score": "Numerical score indicating confidence in this hypothesis (e.g., 1-10).",
-        "Expected Outcome": "What you expect to observe if the hypothesis is correct."
-      }}
-    ]
-  }}
-}}
-```
+### 3. The Immutable Lesson
+
+* A single, high-level principle derived from this specific iteration that should be preserved in long-term memory (e.g., "Velocity penalties without distance rewards lead to hovering behavior").

@@ -24,7 +24,6 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 def run_training_cycle(iteration):
     start_time = time.perf_counter()
-    print(f"run_training_cycle start time: {start_time}")
     # 1. Initialize Workspace, creates file structure for collected data
     ws = ExperimentWorkspace()
     print(f"🚀 [Iter {iteration}] Initializing Training in: {ws.model_root_path}")
@@ -156,7 +155,6 @@ def run_training_cycle(iteration):
     ws.save_metrics(iteration, metrics_payload)
     end_time = time.perf_counter()
     elapsed_time = end_time - start_time
-    print(f"run_training_cycle end time: {end_time}")
     # Format the output using timedelta
     print(f"✅ Training Cycle Complete. Metrics passed to Controller.")
     print(f"Execution took: {timedelta(seconds=elapsed_time)}")

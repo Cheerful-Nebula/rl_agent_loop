@@ -5,8 +5,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 # Define the contenders
-#MODELS=("codegemma:7b" "llama3.1:8b" "qwen2.5-coder:7b" "dolphin-llama3:8b" "wizardlm2:7b" "deepseek-coder:6.7b" ) # Add your models here
-MODELS=("gpt-oss:20b")
+MODELS=("devstral:24b" "nemotron-3-nano:30b" "gemma3:27b" "openthinker:32b") # "deepseek-r1:32b" 
 # Capture arguments
 ITERATIONS=${1:-5}     # required-ish: default 5
 TIMESTEPS=${2:-50000}  # required-ish: default 50000
@@ -38,7 +37,7 @@ case "$TAG" in
   ;;
   *)
     echo "📉 MODE: Standard Text Analysis"
-    SELECTED_CONTROLLER="controllers/standard.py"
+    SELECTED_CONTROLLER="controllers/standard_copy.py"
     ;;
 esac
 # 🚀 LOGIC SWITCH 2: Select Training Engine based on Tag

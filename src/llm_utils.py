@@ -117,7 +117,7 @@ def extract_chat_metrics(
     - Assumes Ollama Python library's ChatResponse structure.
     - Keeps scalars and short previews only (full text lives in cognition JSON/MD).
     """
-    r = _to_plain(response)  # ChatResponse -> dict-like [web:49][web:55]
+    r = _to_plain(response)  # ChatResponse -> dict-like
 
     message = r.get("message") or {}
     options = r.get("options") or {}
@@ -380,7 +380,7 @@ def add_cognition_call(
     message: Dict[str, Any] = data.get("message") or {}
 
     content: str = message.get("content") or ""
-    thinking: Optional[str] = message.get("thinking")  # reasoning trace, if enabled [web:96][web:99]
+    thinking: Optional[str] = message.get("thinking")  # reasoning trace, if enabled 
     tool_calls: List[Dict[str, Any]] = message.get("tool_calls") or []
 
     created_at = data.get("created_at")

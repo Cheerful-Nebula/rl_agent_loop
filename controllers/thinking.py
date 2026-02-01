@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation import CodeValidator
+from src.code_validation_v03 import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
@@ -67,7 +67,10 @@ def run_agentic_improvement(iteration):
         long_term_memory=long_term_memory,
         short_term_history=short_term_history,
     )
-    
+    # According to Ollama model page, you must add this phrase into the system's role prompt
+    if MODEL_NAME == "cogito:32b":
+        diag_role += f"\nEnable deep thinking subroutine.\n"
+
     try:
         response = ollama.chat(
             model=MODEL_NAME, 
@@ -78,7 +81,7 @@ def run_agentic_improvement(iteration):
                 options = Config.analyst_options,
                 think=think_flag)
         
-        diagnosis_plan = response['message']['content']
+        plan_raw = response['message']['content']
  
     except Exception as e:
         print(f"❌ Phase 1 Error: {e}")
@@ -89,7 +92,7 @@ def run_agentic_improvement(iteration):
     cognition_list.append((f"LLM Input: `diag_role` using {Config.analyst_template[0]}.md",diag_role))
     cognition_list.append((f"LLM Input: `diag_task` using {Config.analyst_template[1]}.md",diag_task))
     cognition_list.append(("LLM Output: thinking",response['message']['thinking']))
-    cognition_list.append(("LLM Output: plan",diagnosis_plan))
+    cognition_list.append(("LLM Output: plan",plan_raw))
     # Save ChatResponse Data to CSV
     append_chatresponse_row(
         csv_path =ws.containers['cognition_csv'], 
@@ -114,12 +117,96 @@ def run_agentic_improvement(iteration):
         options=Config.analyst_options,
         prompt_template_roles=f"{Config.analyst_template[0]}.md",
         prompt_template_tasks=f"{Config.analyst_template[1]}.md",)
+   # =========================================================
+    # PHASE 2: Convert Raw Analysis to Structured Output
     # =========================================================
-    # PHASE 2: IMPLEMENTATION (WITH SAFETY NET)
-    # =========================================================
-    print("🔵 AGENT: Phase 2 - Writing Code...")
+    print("🔵 AGENT: Phase 2 - Formatting Analysis...")
     
-    code_role, code_task = prompts.build_coding_prompt(Config.code_gen_template, diagnosis_plan, current_code)
+    # Build Prompt using our Prompt Builder
+    format_role, format_task = prompts.build_formatter_prompt(Config.formatter_template, plan_raw)
+    
+    # According to Ollama model page, you must add this phrase into the system's role prompt
+    if MODEL_NAME == "cogito:32b":
+        format_role += f"\nEnable deep thinking subroutine.\n"
+
+    # Initialize variables for Safety
+    formatted_dict = {}
+    pretty_markdown = "## Error: Parsing Failed" 
+    coder_input_plan = plan_raw # Default fallback: Send raw text if parsing fails
+
+    try:
+        response2 = ollama.chat(
+            model=MODEL_NAME, 
+            messages=[
+                {'role': 'system', 'content': format_role},
+                {'role': 'user', 'content': format_task}
+                ],
+                options = Config.formatter_options)
+        
+        raw_response_content = response2['message']['content']
+
+        # --- PARSING LOGIC ---
+        parsed_data = utils.extract_json_code(raw_response_content)
+        
+        if parsed_data:
+            formatted_dict = parsed_data
+            
+            # 1. Create Human-Readable Log (for Markdown file)
+            pretty_markdown = utils.convert_formatter_json_to_markdown(formatted_dict)
+            
+            # 2. Extract specific stream for the Coder (The Clean Plan)
+            # We use .get() with a fallback to raw content just in case keys are missing
+            coder_input_plan = formatted_dict.get("plan", raw_response_content)
+            
+            print("   ✅ JSON Parsed successfully.")
+        else:
+            print("   ⚠️ JSON Parsing failed. Using raw output.")
+            pretty_markdown = f"## Raw Output (Parsing Failed)\n{raw_response_content}"
+            coder_input_plan = raw_response_content
+          
+    except Exception as e:
+        print(f"❌ Phase 2 Error: {e}")
+        return
+
+    # Saving input prompts and responses as easy to read Markdown documents for later
+    cognition_list.append((f"LLM Input: `format_role` using {Config.formatter_template[0]}.md",format_role))
+    cognition_list.append((f"LLM Input: `format_task` using {Config.formatter_template[1]}.md",format_task))
+    cognition_list.append(("LLM Output: Formatted Plan (Parsed)", pretty_markdown))
+
+    # Save ChatResponse Data to CSV
+    append_chatresponse_row(
+        csv_path =ws.containers['cognition_csv'], 
+        model_name=MODEL_NAME, 
+        response=response2,
+        run_id = f"Iter_{iteration:02d}_format", 
+        iteration=iteration, 
+        phase="Phase_2", 
+        prompt_type="formatting",
+        prompt_template_roles=f"{Config.formatter_template[0]}.md",
+        prompt_template_tasks=f"{Config.formatter_template[1]}.md",
+        cognition_path=cognition_json_path)
+
+    # Saves full prompts/responses of LLM to JSON, One JSON per iteration
+    add_cognition_call(
+        cognition_iter=cognition_iter,
+        response=response2,
+        run_id=f"Iter_{iteration:02d}_format",
+        phase="formatting",
+        system_role=format_role,
+        user_task=format_task,
+        options=Config.formatter_options,
+        prompt_template_roles=f"{Config.formatter_template[0]}.md",
+        prompt_template_tasks=f"{Config.formatter_template[1]}.md",)
+    # =========================================================
+    # PHASE 3: IMPLEMENTATION (WITH SAFETY NET)
+    # =========================================================
+    print("🔵 AGENT: Phase 3 - Writing Code...")
+    
+    code_role, code_task = prompts.build_coding_prompt(Config.code_gen_template, coder_input_plan, current_code)
+
+    # According to Ollama model page, you must add this phrase into the system's role prompt
+    if MODEL_NAME == "cogito:32b":
+        code_role += f"\nEnable deep thinking subroutine.\n"
 
     # Initialize Delta Debugging Trackers / Validation Loop
     previous_attempt_code = current_code
@@ -128,7 +215,7 @@ def run_agentic_improvement(iteration):
 
     # Initial Code Generation Attempt
     try:
-        response2 = ollama.chat(
+        response3 = ollama.chat(
             model=MODEL_NAME,
             messages=[
             {'role': 'system', 'content': code_role},
@@ -140,7 +227,7 @@ def run_agentic_improvement(iteration):
         append_chatresponse_row(
             csv_path =ws.containers['cognition_csv'], 
             model_name=MODEL_NAME, 
-            response=response2,
+            response=response3,
             run_id = f"Iter_{iteration:02d}_code", 
             iteration=iteration, 
             phase="Phase_2", 
@@ -152,7 +239,7 @@ def run_agentic_improvement(iteration):
         # Saves full prompts/responses of LLM to JSON, One JSON per iteration
         add_cognition_call(
             cognition_iter=cognition_iter,
-            response=response2,
+            response=response3,
             run_id=f"Iter_{iteration:02d}_code",
             phase="code_generation",
             system_role=code_role,
@@ -164,10 +251,11 @@ def run_agentic_improvement(iteration):
         # Saving input prompts and responses as easy to read Markdown documents for later
         cognition_list.append((f"LLM Input: `code_role` from {Config.code_gen_template[0]}.md", code_role))
         cognition_list.append((f"LLM Input: `code_task` from {Config.code_gen_template[1]}.md", code_task))
-        cognition_list.append(("LLM Output: thinking",response2['message']['thinking']))
-        cognition_list.append(("LLM Output: `code_response`", response2['message']['content']))
+        cognition_list.append(("LLM Output: thinking",response3['message']['thinking']))
+        cognition_list.append(("LLM Output: `code_response`", response3['message']['content']))
 
-        clean_code = utils.extract_python_code(response2['message']['content'])
+        clean_code = f"import numpy as np\nimport math\n" 
+        clean_code += utils.extract_python_code(response3['message']['content'])
         
         validator = CodeValidator(clean_code)
         is_valid, feedback = validator.validate_static()
@@ -206,6 +294,9 @@ def run_agentic_improvement(iteration):
         print(f"🔧 Fixing Code...")
         
         fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
+        # According to Ollama model page, you must add this phrase into the system's role prompt
+        if MODEL_NAME == "cogito:32b":
+            fix_role += f"\nEnable deep thinking subroutine.\n"
         try:
             response3 = ollama.chat(
                 model=MODEL_NAME,

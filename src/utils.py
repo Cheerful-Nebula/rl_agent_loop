@@ -37,7 +37,34 @@ def extract_python_code(llm_response):
     match = re.search(r'```(.*?)```', llm_response, re.DOTALL)
     if match: return match.group(1).strip()
     return llm_response
+def extract_json(llm_response):
+    """
+    Robustly extracts JSON from an LLM response, handling markdown fences and stray text.
+    """
+    import json
+    import re
+    
+    # 1. Try finding a markdown block first
+    match = re.search(r'```json(.*?)```', llm_response, re.DOTALL)
+    if match:
+        clean_str = match.group(1).strip()
+    else:
+        # 2. If no block, try to find the first '{' and last '}'
+        start = llm_response.find('{')
+        end = llm_response.rfind('}')
+        if start != -1 and end != -1:
+            clean_str = llm_response[start:end+1]
+        else:
+            clean_str = llm_response.strip()
 
+    # 3. Validation / Parsing
+    try:
+        return json.loads(clean_str)
+    except json.JSONDecodeError:
+        # Optional: Print preview for debugging, but keeping logs clean
+        # print(f"⚠️ JSON Parsing Failed. Content preview: {clean_str[:50]}...")
+        return None
+    
 def load_dynamic_module(module_name, file_path):
     """
     Loads a python file from a specific path as a module.
@@ -64,6 +91,43 @@ def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:li
             f.write(final_content)
         print(f"📝 Plan saved to {plan_path}") 
 
+def convert_formatter_json_to_markdown(data: dict) -> str:
+    """
+    Converts the structured Formatter JSON into a clean, human-readable Markdown report.
+    Works for schema class: FormatterOutput(BaseModel)
+    """
+    md_lines = []
+    
+    # 1. ANALYSIS (The "Why")
+    if "analysis" in data and data["analysis"]:
+        md_lines.append("## 🔬 Analysis")
+        md_lines.append(data["analysis"])
+        md_lines.append("")
+
+    # 2. PLAN (The "How" - This goes to the Coder)
+    if "plan" in data and data["plan"]:
+        md_lines.append("## 🛠️ Refinement Plan")
+        md_lines.append(data["plan"])
+        md_lines.append("")
+
+    # 3. LESSON (The Long-term Memory)
+    if "lesson" in data and data["lesson"]:
+        md_lines.append("## 🧠 Immutable Lesson")
+        md_lines.append(f"> {data['lesson']}")
+        md_lines.append("")
+
+    # 4. HYPERPARAMETERS (The Future Config Updates)
+    if "hyperparameters" in data and data["hyperparameters"]:
+        md_lines.append("## ⚙️ Hyperparameter Recommendations")
+        # Handle if it's a string (raw text) or dict
+        if isinstance(data["hyperparameters"], dict):
+            for k, v in data["hyperparameters"].items():
+                md_lines.append(f"- **{k}**: {v}")
+        else:
+            md_lines.append(str(data["hyperparameters"]))
+        md_lines.append("")
+
+    return "\n".join(md_lines)
 
 def plan_json_to_markdown(plan_json: str) -> str:
     """
@@ -354,7 +418,7 @@ def linear_schedule(initial_value: float, final_value: float):
 # ---------------------------------------------------------
 # MEMORY FUNCTIONS (Now Workspace-Aware)
 # ---------------------------------------------------------
-def get_recent_history(workspace, current_iteration, n=3):
+def get_recent_history(workspace, current_iteration, n=20):
     """
     Retrieves the 'Implementation Plan' from the previous N iterations.
     Uses the workspace to find the files in the correct Iter_XX folders.
@@ -365,11 +429,11 @@ def get_recent_history(workspace, current_iteration, n=3):
     for i in range(start_idx, current_iteration):
         # Construct path: experiments/.../Iter_XX/cognition/plan.md
         try:
-            plan_path = workspace.get_path("cognition", i, "plan.md")
+            plan_path = workspace.get_path("cognition_lessons", i, "lesson.md")
             if os.path.exists(plan_path):
                 content = load_file(plan_path)
                 # Just take the whole plan, or split if your prompt format is strict
-                history_text += f"\n--- HISTORY ENTRY (Iter {i}) ---\n{content[:500]}...\n"
+                history_text += f"\n--- HISTORY ENTRY (Iter {i}) ---\n{content}\n"
         except Exception as e:
             continue
             
@@ -467,8 +531,8 @@ def performance_telemetry_as_table(stats_list: list[dict]):
     # Define the columns we want to compare
     headers = [
         "metric",
-        f"Deterministic/Base Reward",f"Deterministic/Shaped Reward",
-        f"Stochastic/Base Reward",f"Stochastic/Shaped Reward"
+        f"Stochastic/Shaped Reward",
+        f"Deterministic/Base Reward"
     ]
     
     # Create the header row
@@ -495,10 +559,8 @@ def performance_telemetry_as_table(stats_list: list[dict]):
         # Pre-calculate/format values to reduce token noise
         row = [
             key,
-            f"{det_base_stats[key]}",
-            f"{det_shaped_stats[key]}",
-            f"{stoch_base_stats[key]}",
-            f"{stoch_shaped_stats[key]}"
+            f"{stoch_shaped_stats[key]}",
+            f"{det_base_stats[key]}"
         ]
         table.append("| " + " | ".join(row) + " |")
 

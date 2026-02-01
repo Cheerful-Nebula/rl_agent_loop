@@ -11,6 +11,7 @@ class DynamicRewardWrapper(gym.Wrapper):
     def __init__(self, env, reward_code_path=None):
         super().__init__(env)
         self.reward_module = None
+        self.last_obs = None
         
         # Load the module INSIDE the process that actually runs the environment
         if reward_code_path:
@@ -20,6 +21,14 @@ class DynamicRewardWrapper(gym.Wrapper):
             except Exception as e:
                 print(f"⚠️ Wrapper failed to load reward module from {reward_code_path}: {e}")
                 sys.exit()
+
+    def reset(self, **kwargs):
+        """
+        [ADDED] Capture the initial state so we have a 'prev_obs' for the very first step.
+        """
+        obs, info = self.env.reset(**kwargs)
+        self.last_obs = np.array(obs) # Copy to ensure immutability
+        return obs, info
 
     def build_physical_state(self):
         """
@@ -47,9 +56,15 @@ class DynamicRewardWrapper(gym.Wrapper):
         }
 
     def step(self, action):
-        # 1. Execute Action
-        # We capture the 'norm_obs' (Standard Scaled) for the PPO Agent
+        # 0. Secure the Previous Observation (S_t)
+        # We must do this BEFORE env.step() updates the world
+        prev_obs_safe = self.last_obs.copy() if self.last_obs is not None else np.zeros(8)
+        
+        # 1. Execute the Action (Transition to S_t+1)
         norm_obs, original_reward, terminated, truncated, info = self.env.step(action)
+        
+        # Update tracker for the NEXT step
+        self.last_obs = np.array(norm_obs)
         
         # 2. Create the "Clean Slate" Sparse Reward
         # We strip the environment's default shaping, leaving only the sparse signal
@@ -58,24 +73,21 @@ class DynamicRewardWrapper(gym.Wrapper):
 
         # 3. Inject Raw Data into Info
         # This gives the LLM the "Truth" without confusing the Agent
-        info["action_usage"]={"fuel_consumed_this_step":0.3 if action == 2 else (0.03 if action in [1, 3] else 0),
-                              "action_index":int(action),
-                              "action_label":"nothing" if int(action) == 0 \
-                                else "left_engine" if int(action) == 1\
-                                else "main_engine" if int(action) == 2\
-                                else "right_engine"}
+        info["action_usage"]=int(action)
+        info["prev_obs"] = prev_obs_safe 
 
         # 4. Execute LLM Reward Logic
         final_reward = base_reward
         if self.reward_module:
             try:
+                # The LLM now has access to S_t+1 (norm_obs) and S_t (info['prev_obs'])
                 shaping_reward = self.reward_module.calculate_reward(norm_obs, info)
                 final_reward += shaping_reward
             except Exception as e:
                 # Fail gracefully so training doesn't crash
                 print(f"DynamicRewardWrapper failed:\n {e}")
                 sys.exit()
-                pass
+                # pass
             
         # Return NORMALIZED obs to PPO, but use the CUSTOM reward
         return norm_obs, final_reward, terminated, truncated, info

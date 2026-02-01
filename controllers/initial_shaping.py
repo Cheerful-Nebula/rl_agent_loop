@@ -10,14 +10,15 @@ warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
-from src.code_validation_v03 import CodeValidator
+from src.code_validation import CodeValidator
 from src import utils
 from src.config import Config
 from src.llm_utils import *
+from src.cognitive_node import CognitiveNode
 
 MODEL_NAME = Config.LLM_MODEL
 # Enabling thinking trace based on model name
-think_flag = get_thinking_flag(MODEL_NAME)
+think_flag = False #get_thinking_flag(MODEL_NAME)
 
 
 def get_inital_shaping():
@@ -26,61 +27,23 @@ def get_inital_shaping():
 
     # 1. Initialize Workspace
     ws = ExperimentWorkspace()
-    cognition_json_path = ws.get_path("cognition_json", 0, "cognition_record.json") # Where to save JSON of cognition
+    brain = CognitiveNode(iteration = 0 , workspace = ws, model = MODEL_NAME)
     save_path = ws.get_path("code", 0, "reward.py") # Where we will save generated code to be accessed by train.py script
-    cognition_iter = init_cognition_iteration(iteration=0, model_name=MODEL_NAME)
+ 
 
     
 
     role, task = prompts.build_initial_shaping_prompt(Config.code_zero_template)
-    try:
-        response = ollama.chat(
-            model = MODEL_NAME,
-            messages = [
-                {'role':'system', 'content': role},
-                {'role':'user', 'content': task}
-            ],
-            options = Config.coder_options,
-            think= think_flag
-        )
-    except Exception as e:
-        print(f"❌ Initial Reward Function Generation Error:\n {e}")
-        sys.exit()
-        return
 
-        # Saving input prompts and responses as easy to read Markdown documents for later
-    cognition_list = []
-    cognition_list.append((f"LLM Input: `role` using {Config.code_zero_template[0]}.md",role))
-    cognition_list.append((f"LLM Input: `task` using {Config.code_zero_template[1]}.md",task))
-    if think_flag:
-        cognition_list.append(("LLM Output: thinking",response['message']['thinking']))
-    cognition_list.append(("LLM Output: plan",response['message']['content']))
-
-    append_chatresponse_row(
-        csv_path =ws.containers['cognition_csv'], 
-        model_name=MODEL_NAME, 
-        response=response,
-        run_id = f"Iter_00_code", 
-        iteration=0, 
-        phase="Phase_0", 
-        prompt_type="code_gen",
-        prompt_template_roles=f"{Config.code_zero_template[0]}.md",
-        prompt_template_tasks=f"{Config.code_zero_template[1]}.md",
-        cognition_path=cognition_json_path)
-
-    # Saves full prompts/responses of LLM to JSON, One JSON per iteration
-    add_cognition_call(
-        cognition_iter=cognition_iter,
-        response=response,
-        run_id=f"Iter_00_code",
-        phase="code_gen",
-        system_role=role,
-        user_task=task,
-        options=Config.coder_options,
-        prompt_template_roles=f"{Config.code_zero_template[0]}.md",
-        prompt_template_tasks=f"{Config.code_zero_template[1]}.md",)
+    response = brain.chat(phase_name='initial',
+                                system_prompt=role,
+                                user_prompt=task,
+                                parse_json=False,
+                                options=Config.coder_options)
     
-    clean_code = utils.extract_python_code(response['message']['content'])
+    # Imports are hit or miss with LLMs, best to just add them in to avoid failing code validation over missing imports
+    clean_code = f"import numpy as np\nimport math\n" 
+    clean_code += utils.extract_python_code(response)
         
     validator = CodeValidator(clean_code)
     is_valid, feedback = validator.validate_static()
@@ -100,7 +63,39 @@ def get_inital_shaping():
         print(f"{feedback}")
         print("*"*20)
 
-    
+    # --- RETRY LOOP ---
+    # This runs if validation failed OR if an exception occurred above
+    attempt_num = 0
+    while not is_valid and attempt_num < 3:
+        attempt_num += 1
+        print(f"⚠️ Validation failed (Attempt {attempt_num}). Feedback: {feedback}")
+        
+        # Save to the 'failed_code' directory defined in Workspace
+        fail_filename = f"fail_{attempt_num:02d}.py"
+        fail_path = ws.get_path("failed_code", 0, fail_filename)
+        
+        if attempt_num == 1:
+            with open(fail_path, "w") as f:
+                f.write(f"# Error: {feedback}\n")
+                f.write(clean_code)
+            
+        print(f"🔧 Fixing Code...")
+        
+        fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
+        
+        # LLM code self-correction call
+        code_fix_response = brain.chat(phase_name='code_fix',
+                                       system_prompt=fix_role,
+                                       user_prompt=fix_task,
+                                       parse_json=False,
+                                       options=Config.coder_options)
+        clean_code = f"import numpy as np\nimport math\n" 
+        clean_code = utils.extract_python_code(code_fix_response)
+        validator = CodeValidator(clean_code)
+        is_valid, feedback = validator.validate_static()
+
+        if is_valid:
+            is_valid, feedback = validator.validate_runtime()
     # Save code to file to train the first iteration agent
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     header = f"# Generated by {MODEL_NAME} (Iter {0}) on {timestamp_str}\n"
@@ -113,8 +108,8 @@ def get_inital_shaping():
     except Exception as e:
         print(f"❌ Phase 0, Error saving code: {e}")
 
-    # Save cognition history in easy read markdown documents 
-    utils.save_cognition_markdown(ws,0, cognition_list)
+    # Save cognition markdown 
+    brain.save_report()
 
     elapsed_time =time.perf_counter()-start_time
     print(f"Execution took: {timedelta(seconds=elapsed_time)}")

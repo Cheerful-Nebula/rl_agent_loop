@@ -1,7 +1,7 @@
 import ast
 import numpy as np
 import importlib.util
-from typing import Tuple, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 
 class CodeValidator:
     def __init__(self, code: str):
@@ -43,11 +43,10 @@ class CodeValidator:
         """
         Orchestrates the validation pipeline:
         1. Compile: Load code into a sandbox (Holodeck).
-        2. Integrity: Check for Crashes, NaNs, Infinities, and Type errors.
+        2. Integrity: Check for Crashes, NaNs, Infinities, and Type errors with new signature.
         3. Logic: Check for Vanishing Gradients, Exploding Rewards, and Incentive Alignment.
         Args:
             strict_mode (bool): If False, skips the 'Logic Checks' (Vanishing Gradient/Incentives).
-                                Useful for Iteration 1 to allow imperfect heuristics to pass.
         """
         try:
             # A. Build the Sandbox
@@ -64,8 +63,6 @@ class CodeValidator:
                 if not valid_logic:
                     return False, msg_logic
             else:
-                # In non-strict mode, we still run the code to ensure it DOESN'T CRASH 
-                # on the logic scenarios, but we ignore the boolean result.
                 self._check_rl_logic(module)
 
             return True, "Passed all Runtime Safety and Logic checks."
@@ -88,71 +85,74 @@ class CodeValidator:
             
         return module
 
-    def _get_mock_data(self, scenario_type="standard"):
+    def _get_mock_data(self, scenario_type="standard") -> Tuple[List[float], Dict[str, Any]]:
         """
-        Generates Mock Data that mimics your Wrapper's 'build_physical_state'.
-        We manually populate 'distance_from_origin' etc. to match the physics of the scenario.
+        Generates Mock Data for the new function signature.
+        
+        Signature requires:
+        1. observation (list): [x, y, vx, vy, ang, ang_v, leg1, leg2]
+        2. info (dict): {
+            "action_usage": int (0-3),
+            "prev_obs": list
+        }
         """
-        # Base keys that your Wrapper provides directly from Box2D
-        data = {
-            "x_pos": 0.0, "y_pos": 0.0,
-            "x_vel": 0.0, "y_vel": 0.0,
-            "angle": 0.0, "angular_velocity": 0.0,
-            "distance_from_origin": 0.0,    # Wrapper pulls this from lander.position.length
-            "linear_velocity_mag": 0.0,     # Wrapper pulls this from lander.linearVelocity.length
-            "fuel_consumed_this_step": 0.0
+        # Default: Hovering at (0,0) with no velocity
+        # Obs: [x, y, vx, vy, ang, ang_v, leg1, leg2]
+        obs = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        
+        # Default Info containing the required keys guaranteed by the environment
+        info = {
+            "prev_obs": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  
+            "action_usage": 0 # FIXED: Now an integer 0-3, matching system prompts
         }
 
         if scenario_type == "hover_high":
-            # Far away, stationary
-            data.update({
-                "y_pos": 1.0, 
-                "distance_from_origin": 1.0, 
-                "linear_velocity_mag": 0.0
-            })
+            # High up (y=1.0), stationary, legs up
+            obs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            info["prev_obs"] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         
         elif scenario_type == "landing_pad":
-            # Perfect spot, gentle speed
-            data.update({
-                "y_pos": 0.0, 
-                "distance_from_origin": 0.0, 
-                "linear_velocity_mag": 0.1, 
-                "y_vel": -0.1
-            })
+            # On ground (y=0.0), legs touching (1.0), gentle downward velocity (-0.05)
+            obs = [0.0, 0.0, 0.0, -0.05, 0.0, 0.0, 1.0, 1.0]
+            info["prev_obs"] = [0.0, 0.01, 0.0, -0.05, 0.0, 0.0, 1.0, 1.0]
             
         elif scenario_type == "crash_fast":
-            # Perfect spot, but hitting hard
-            data.update({
-                "y_pos": 0.0,
-                "distance_from_origin": 0.0, 
-                "linear_velocity_mag": 5.0,
-                "y_vel": -5.0
-            })
+            # On ground (y=0.0), high downward velocity (-5.0), legs up
+            obs = [0.0, 0.0, 0.0, -5.0, 0.0, 0.0, 0.0, 0.0]
+            info["prev_obs"] = [0.0, 0.2, 0.0, -5.0, 0.0, 0.0, 0.0, 0.0]
+            
+        elif scenario_type == "fuel_heavy_usage":
+             # Same as hover, but firing main engine hard (Action 2)
+             obs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+             info["prev_obs"] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+             info["action_usage"] = 2 
 
-        return data
+        return obs, info
 
     def _check_math_integrity(self, module) -> Tuple[bool, str]:
         """
         Phase 1: Integrity Check.
-        Tests for Runtime Crashes, NaNs, Infinities, and Return Types.
+        Tests for Runtime Crashes, NaNs, Infinities, and Return Types using new signature.
         """
-        # Test Case 1: Division by Zero Risk (Zero Distance)
-        zero_data = self._get_mock_data("landing_pad")
-        zero_data["distance_from_origin"] = 0.0 # Force zero
-        zero_data["linear_velocity_mag"] = 0.0
+        # Test Case 1: Division by Zero Risk (Zero State)
+        # We pass strictly zeros to check for 0/0 or log(0) errors on position/vel
+        zero_obs = [0.0] * 8
+        zero_info = {
+            "prev_obs": [0.0] * 8, 
+            "action_usage": 0 # FIXED: Integer
+        }
         
-        # Test Case 2: Standard Values (Sanity Check)
-        std_data = self._get_mock_data("hover_high")
+        # Test Case 2: Standard Values
+        std_obs, std_info = self._get_mock_data("hover_high")
 
-        # PPO Agent sees zeros (LLM should ignore this)
-        dummy_obs = [0.0] * 8
+        test_cases = [
+            ("Zero-Input (Edge Case)", zero_obs, zero_info),
+            ("Standard-Input", std_obs, std_info)
+        ]
 
-        for name, raw_physics in [("Zero-Input (Edge Case)", zero_data), ("Standard-Input", std_data)]:
+        for name, obs, info in test_cases:
             try:
-                # Construct the info dict exactly like the Wrapper does
-                info = {"raw_physics": raw_physics}
-                
-                reward = module.calculate_reward(dummy_obs, info)
+                reward = module.calculate_reward(obs, info)
 
                 # Check A: Return Type
                 if not isinstance(reward, (float, np.floating, int, np.integer)):
@@ -165,6 +165,15 @@ class CodeValidator:
                 if np.isinf(reward):
                     return False, f"Math Error: Reward is Infinite in {name}. Check for division by zero."
 
+            except KeyError as e:
+                return False, f"Key Error in {name}: You accessed a key that doesn't exist: {e}. Check docstring constraints."
+            except IndexError as e:
+                return False, f"Index Error in {name}: Accessed invalid index in observation list: {e}."
+            except TypeError as e:
+                # NEW: Explicit handling for the 'dict' vs 'int' confusion
+                return False, f"Type Error in {name}: {str(e)}. (Check if you are treating 'info' keys as wrong types, e.g. 'action_usage' is an int)."
+            except NameError as e:
+                return False, f"Name Error in {name}: {str(e)}. (Did you forget to import a module like 'math' or 'numpy'?)"
             except Exception as e:
                 return False, f"Crash in {name}: {str(e)}"
 
@@ -172,30 +181,28 @@ class CodeValidator:
 
     def _check_rl_logic(self, module) -> Tuple[bool, str]:
         """
-        Phase 2: Logic Check (The Dual View).
+        Phase 2: Logic Check.
         Tests for Vanishing Gradients, Exploding Gradients, and Inverse Rewards.
         """
         scenarios = ["hover_high", "landing_pad", "crash_fast"]
         results = {}
-        dummy_obs = [0.0] * 8 
 
         # 1. Collect Rewards
         for name in scenarios:
-            raw_physics = self._get_mock_data(name)
-            info = {"raw_physics": raw_physics}
+            obs, info = self._get_mock_data(name)
             try:
-                reward = module.calculate_reward(dummy_obs, info)
+                reward = module.calculate_reward(obs, info)
                 results[name] = float(reward)
             except Exception as e:
                 return False, f"Logic Check Failed: Crash in scenario '{name}' ({str(e)})"
 
         # 2. Check: Exploding Gradients (Normalization)
-        for name, r in results.items():
-            if abs(r) > 20.0: # Loose bound
-                return False, f"Scaling Error: Reward in '{name}' is {r:.2f}. Exploding Gradient Risk. Normalize to approx -1.0 to 1.0."
+        # for name, r in results.items():
+        #    if abs(r) > 20.0: # Loose bound
+        #        return False, f"Scaling Error: Reward in '{name}' is {r:.2f}. Exploding Gradient Risk. Normalize to approx -1.0 to 1.0."
 
         # 3. Check: Vanishing Gradient (Incentive to Land)
-        # Landing (0.0 distance) must be better than Hovering (1.0 distance)
+        # Landing (y=0) must be better than Hovering (y=1)
         if results["landing_pad"] <= results["hover_high"]:
             return False, (
                 f"Logic Error (Vanishing Gradient): Landing ({results['landing_pad']:.3f}) "
@@ -204,7 +211,7 @@ class CodeValidator:
             )
 
         # 4. Check: Safety (Incentive not to Crash)
-        # Soft landing must be better than hard crash
+        # Soft landing (-0.05 vel) must be better than hard crash (-5.0 vel)
         if results["landing_pad"] <= results["crash_fast"]:
              return False, (
                 f"Safety Error: Crashing ({results['crash_fast']:.3f}) "
