@@ -18,7 +18,39 @@ from src.ledger import ExperimentLedger  # <--- NEW IMPORT
 
 MODEL_NAME = Config.LLM_MODEL
 MAX_RETRIES = 5 
-
+# Define your chosen roster here (Copy-pasted from our chat)
+if MODEL_NAME == "gemma3:27b": # Deep Reasoning Team
+    # Team 1: Deep Logic
+    ACTIVE_ROSTER = {
+    "architect": "gemma3:27b",
+    "formatter": "nemotron-3-nano:30b",
+    "coder":    "qwen3-coder:30b",
+    "validator": "qwen3-coder:30b"
+    }
+elif MODEL_NAME == "openthinker:32b": # Maximum Safety Team
+    # Team 2: Maximum Safety
+    ACTIVE_ROSTER ={
+        "architect": "openthinker:32b",   # Balanced, risk-averse planning
+        "formatter": "nemotron-3-nano:30b", # Reliable data entry
+        "coder":     "qwen3-coder:30b",   # Fast, competent coding
+        "validator": "llama3.2-vision:11b" # The "Gatekeeper" - Refutes 80% of bad ideas
+        }
+elif MODEL_NAME == "nemotron-3-nano:30b": # Maximum Throughput Team
+    # Team 3: Speed Run (The Stable Loop)
+    ACTIVE_ROSTER={
+        "architect": "nemotron-3-nano:30b", # Fast, structured planning
+        "formatter": "nemotron-3-nano:30b", # (Self-formatting)
+        "coder":     "qwen3-coder:30b",      # Fast execution
+        "validator": "openthinker:32b"    # Nuanced verdicts (keeps loop moving)
+    }
+else:
+    # Fallback / Default
+    ACTIVE_ROSTER = {
+        "architect": Config.LLM_MODEL,
+        "formatter": Config.LLM_MODEL,
+        "coder":     Config.LLM_MODEL,
+        "validator": Config.LLM_MODEL
+    }
 def run_agentic_improvement(iteration):
     # For catching excution time at the end 
     start_time = time.perf_counter()
@@ -26,7 +58,7 @@ def run_agentic_improvement(iteration):
     # 1. Initialize Workspace, Brain, and Memory
     ws = ExperimentWorkspace()
     brain = CognitiveNode(iteration=iteration, workspace=ws, model=MODEL_NAME)
-    brain_memory = ExperimentLedger(ws.model_root_path) # <--- NEW: Initialize Ledger
+    brain_memory = ExperimentLedger(ws.model_root_path) # Initialize Experiment Ledger
     
     if iteration == 1:
         upsert_model_metadata_row(ws.containers["model_metadata"], MODEL_NAME)
@@ -76,7 +108,8 @@ def run_agentic_improvement(iteration):
                 system_prompt=val_role,
                 user_prompt=val_task,
                 parse_json=True,
-                options={"temperature": 0.1} # Strict logic
+                options={"temperature": 0.1,'num_ctx': 8182,'num_predict': 4096},
+                model_override= ACTIVE_ROSTER["validator"] 
             )
             
             # Fallback for parsing failures
@@ -134,7 +167,8 @@ def run_agentic_improvement(iteration):
                                 system_prompt=format_role,
                                 user_prompt=format_task,
                                 parse_json=True,
-                                options=Config.formatter_options)
+                                options=Config.formatter_options,
+                                model_override=ACTIVE_ROSTER["formatter"])
 
     coder_input_plan = plan_raw # Default fallback
     lesson = None
@@ -150,7 +184,8 @@ def run_agentic_improvement(iteration):
                                         system_prompt=format_fix_role,
                                         user_prompt=format_fix_task,
                                         parse_json=True,
-                                        options=Config.formatter_options)
+                                        options=Config.formatter_options,
+                                        model_override=ACTIVE_ROSTER["formatter"])
         if plan_formatted is None:
             print("⚠️ Formatting returned None. Falling back to raw diagnosis.")
             print("Parsing failed, No Lesson saved")
@@ -210,16 +245,23 @@ def run_agentic_improvement(iteration):
                             system_prompt=code_role,
                             user_prompt=code_task,
                             parse_json=False,
-                            options=Config.coder_options)
+                            options=Config.get_coder_options(ACTIVE_ROSTER["coder"]),
+                            model_override=ACTIVE_ROSTER["coder"])
     
     clean_code = f"import numpy as np\nimport math\n" 
-    clean_code += utils.extract_python_code(code_iter_response)
-    
-    validator = CodeValidator(clean_code)
-    is_valid, feedback = validator.validate_static()
-    if is_valid: 
-        is_valid, feedback = validator.validate_runtime()
-
+    # ### Safety Check 1 (Prevent Crash on Initial Generation) ###
+    if code_iter_response:
+        clean_code += utils.extract_python_code(code_iter_response)
+        validator = CodeValidator(clean_code)
+        is_valid, feedback = validator.validate_static()
+        if is_valid: 
+            is_valid, feedback = validator.validate_runtime()
+    else:
+        print("⚠️ Initial generation failed (Empty Response). Pushing to fix loop...")
+        is_valid = False
+        feedback = "The model failed to generate any code (Empty Response)."
+        # We leave clean_code as just imports so the validator fails immediately below if checked, 
+        # but we already set is_valid=False so we go straight to the while loop.
 
     # --- RETRY LOOP ---
     while not is_valid and attempt_num < MAX_RETRIES:
@@ -249,10 +291,18 @@ def run_agentic_improvement(iteration):
                                        system_prompt=fix_role,
                                        user_prompt=fix_task,
                                        parse_json=False,
-                                       options=Config.coder_options)
+                                       options=Config.get_coder_options(ACTIVE_ROSTER["coder"]),
+                                       model_override=ACTIVE_ROSTER["coder"])
         
+        # ### Safety Check 2 (Prevent Crash inside Retry Loop) ###
+        if code_fix_response is None:
+             print(f"⚠️ Attempt {attempt_num} failed: Model returned None. Retrying...")
+             # Skip extraction and let the loop spin again. 
+             # We rely on 'feedback' remaining the same (or you could update it)
+             continue 
+
         clean_code = f"import numpy as np\nimport math\n" 
-        clean_code = utils.extract_python_code(code_fix_response)
+        clean_code += utils.extract_python_code(code_fix_response)
         validator = CodeValidator(clean_code)
         is_valid, feedback = validator.validate_static()
 

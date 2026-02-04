@@ -115,6 +115,11 @@ def convert_formatter_json_to_markdown(data: dict) -> str:
         md_lines.append("## 🧠 Immutable Lesson")
         md_lines.append(f"> {data['lesson']}")
         md_lines.append("")
+        
+    if "hypothesis" in data and data["hypothesis"]:
+        md_lines.append("## 🧠 Hypothesis")
+        md_lines.append(f"> {data['hypothesis']}")
+        md_lines.append("")
 
     # 4. HYPERPARAMETERS (The Future Config Updates)
     if "hyperparameters" in data and data["hyperparameters"]:
@@ -507,7 +512,7 @@ def get_hardware_config():
 # Converting evaluations metrics dictionary to markdown table
 # Hoping for improved comprehensision of LLM's analysis
 # ------------------------------------------------------------
-def performance_telemetry_as_table(stats_list: list[dict]):
+def performance_telemetry_as_table(stats_list: list[dict]) -> str:
     """
     Converts the list of performance dicts into a Markdown table for better LLM reasoning.
     """
@@ -566,7 +571,7 @@ def performance_telemetry_as_table(stats_list: list[dict]):
 
     return "\n".join(table)
 
-def training_telemetry_as_table(stats_list: list[dict]):
+def training_telemetry_as_table(stats_list: list[dict]) -> str:
     """
     Converts the list of performance dicts into a Markdown table for better LLM reasoning.
     """

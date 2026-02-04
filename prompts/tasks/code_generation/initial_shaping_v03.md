@@ -27,8 +27,8 @@ The function receives the standard LunarLander state vector:
 
 Additional information provided in `info` dictionary:
 
-* `info["action_usage"]`: Index of the action taken (0-3)
-* `info["prev_obs]`: Observation Vector from previous `step()` call
+* `info["action"]` (int) : Index of the action taken (0-3)
+* `info["prev_obs]` (list): Observation Vector from previous `step()` call
 
 ### Task
 

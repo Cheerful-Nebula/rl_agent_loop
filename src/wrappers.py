@@ -73,7 +73,7 @@ class DynamicRewardWrapper(gym.Wrapper):
 
         # 3. Inject Raw Data into Info
         # This gives the LLM the "Truth" without confusing the Agent
-        info["action_usage"]=int(action)
+        info["action"]=int(action)
         info["prev_obs"] = prev_obs_safe 
 
         # 4. Execute LLM Reward Logic

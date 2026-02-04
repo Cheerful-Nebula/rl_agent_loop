@@ -47,6 +47,7 @@ def build_diagnosis_prompt(template: tuple[str,str],
     metrics_json["num_updates"]=metrics_json["n_updates"]["total"]
     del metrics_json["config"]
     del metrics_json["n_updates"]
+    
     # Format the JSON blob for the template
     metrics_json_str = json.dumps(metrics_json, indent=4)
 

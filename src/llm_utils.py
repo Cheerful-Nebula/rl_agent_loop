@@ -368,6 +368,7 @@ def add_cognition_call(
     options: Optional[Dict[str, Any]] = None,
     prompt_template_roles: Optional[str] = None,
     prompt_template_tasks: Optional[str] = None,
+    model_override: Optional[str] = None
 ) -> None:
     """
     Append one LLM call record (including thinking trace) to the iteration log.
@@ -396,7 +397,7 @@ def add_cognition_call(
     call_record: Dict[str, Any] = {
         "run_id": run_id,
         "phase": phase,
-        "model_name": cognition_iter.get("model_name"),
+        "model_name": model_override if model_override else cognition_iter.get("model_name"),
 
         # Prompt templates and rendered text
         "prompt_template_roles": prompt_template_roles,

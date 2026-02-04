@@ -16,7 +16,7 @@ from src.config import Config
 from src.llm_utils import *
 from src.cognitive_node import CognitiveNode
 
-MODEL_NAME = Config.LLM_MODEL
+MODEL_NAME = "gpt-oss:20b"
 # Enabling thinking trace based on model name
 think_flag = False #get_thinking_flag(MODEL_NAME)
 
@@ -39,7 +39,7 @@ def get_inital_shaping():
                                 system_prompt=role,
                                 user_prompt=task,
                                 parse_json=False,
-                                options=Config.coder_options)
+                                options=Config.get_coder_options(MODEL_NAME))
     
     # Imports are hit or miss with LLMs, best to just add them in to avoid failing code validation over missing imports
     clean_code = f"import numpy as np\nimport math\n" 
@@ -88,7 +88,7 @@ def get_inital_shaping():
                                        system_prompt=fix_role,
                                        user_prompt=fix_task,
                                        parse_json=False,
-                                       options=Config.coder_options)
+                                       options=Config.get_coder_options(MODEL_NAME))
         clean_code = f"import numpy as np\nimport math\n" 
         clean_code = utils.extract_python_code(code_fix_response)
         validator = CodeValidator(clean_code)

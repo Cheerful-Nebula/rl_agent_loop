@@ -36,7 +36,8 @@ class CognitiveNode:
              system_prompt: str, 
              user_prompt: str, 
              parse_json: bool = False,
-             options: Optional[Dict] = None) -> Union[str, Dict, None]:
+             options: Optional[Dict] = None,
+             model_override: Optional[str] = None) -> Union[str, Dict, None]:
         """
         Executes a thought step: Call LLM -> Validate Response -> Log Everything.
         
@@ -52,10 +53,11 @@ class CognitiveNode:
             - Parsed Dict (if parse_json=True and success)
             - None (if API failed or JSON parsing failed)
         """
-        print(f"🔵 AGENT (Iter {self.iteration}): Phase '{phase_name}'...")
+        print(f"🔵 AGENT (Iter {self.iteration}): Phase '{phase_name}' Model {model_override if model_override else self.model}")
+
 
         # 1. Execute Robust API Call
-        response = self._robust_api_call(system_prompt, user_prompt, options)
+        response = self._robust_api_call(system_prompt, user_prompt, options, model_override)
         
         if not response:
             print(f"   💀 Critical Failure in {phase_name}: No response received.")
@@ -86,7 +88,8 @@ class CognitiveNode:
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             log_content_for_md=log_content,
-            options=options
+            options=options,
+            model_override=model_override if model_override else self.model
         )
 
         # Return the parsed dict if JSON was requested, otherwise raw text
@@ -97,12 +100,15 @@ class CognitiveNode:
         if self.markdown_buffer:
             utils.save_cognition_markdown(self.ws, self.iteration, self.markdown_buffer)
 
-    def _robust_api_call(self, system_prompt: str, user_prompt: str, options: Dict) -> Optional[Any]:
+    def _robust_api_call(self, system_prompt: str, user_prompt: str, options: Dict,model_override: Optional[str] = None) -> Optional[Any]:
         """Internal loop handling retries, timeouts, and empty responses."""
+        # Check who is speaking, needed for MOE runs
+        active_model = model_override if model_override else self.model
+        # print(f"Model listed as 'active_model' inside of '_robust_api_call {active_model}'") # For debugging
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = ollama.chat(
-                    model=self.model,
+                    model=active_model,
                     messages=[
                         {'role': 'system', 'content': system_prompt},
                         {'role': 'user', 'content': user_prompt}
@@ -112,7 +118,7 @@ class CognitiveNode:
                 
                 # Validation: Check for empty content
                 if not response or 'message' not in response or not response['message']['content'].strip():
-                    print(f"   ⚠️ Attempt {attempt}: Received empty response. Retrying...")
+                    print(f"   ⚠️ Attempt {attempt}: Received empty response from {active_model}. Retrying...")
                     time.sleep(1)
                     continue
                     
@@ -125,10 +131,11 @@ class CognitiveNode:
         
         return None
 
-    def _log_interaction(self, phase_name, response, system_prompt, user_prompt, log_content_for_md, options):
+    def _log_interaction(self, phase_name, response, system_prompt, user_prompt, log_content_for_md, options,model_override: Optional[str] = None):
         """Encapsulates all side-effect logging to clean up the main logic."""
         run_id = f"Iter_{self.iteration:02d}_{phase_name}"
-
+        active_model = model_override if model_override else self.model
+        # print(f"Model listed as 'active_model' inside of '_log_iteration' {active_model}'") # For debugging
         # A. JSON History (Detailed Replay Data)
         llm_utils.add_cognition_call(
             cognition_iter=self.cognition_iter,
@@ -137,7 +144,8 @@ class CognitiveNode:
             phase=phase_name,
             system_role=system_prompt,
             user_task=user_prompt,
-            options=options
+            options=options,
+            model_override= active_model
         )
         # Checkpoint the JSON immediately in case of crash later
         llm_utils.save_cognition_iteration(self.cognition_iter, self.json_path)
@@ -146,7 +154,7 @@ class CognitiveNode:
         if self.csv_container:
             llm_utils.append_chatresponse_row(
                 csv_path=self.csv_container,
-                model_name=self.model,
+                model_name=active_model,
                 response=response,
                 run_id=run_id,
                 iteration=self.iteration,
@@ -157,8 +165,8 @@ class CognitiveNode:
 
         # C. Markdown Buffer (Human Readable)
         # We append the prompts AND the result for context
-        self.markdown_buffer.append((f"Phase: {phase_name} [System]", system_prompt))
-        self.markdown_buffer.append((f"Phase: {phase_name} [User]", user_prompt))
+        self.markdown_buffer.append((f"Phase: {phase_name} [System] {active_model}", system_prompt))
+        self.markdown_buffer.append((f"Phase: {phase_name} [User] {active_model}", user_prompt))
         if response.message.thinking is not None and response.message.thinking != "":
-            self.markdown_buffer.append((f"Phase: {phase_name} [Thinking Trace]", response.message.thinking ))
-        self.markdown_buffer.append((f"Phase: {phase_name} [Output]", log_content_for_md))
+            self.markdown_buffer.append((f"Phase: {phase_name} [Thinking Trace] {active_model}", response.message.thinking ))
+        self.markdown_buffer.append((f"Phase: {phase_name} [Output] {active_model}", log_content_for_md))

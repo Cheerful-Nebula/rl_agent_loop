@@ -27,15 +27,66 @@ class Config:
     formatter_options={
         'num_ctx': 16384,
         'num_predict': 5000,
-        'temperature': 0.0,  
+        'temperature': 0.2,  
     }
     # For Phase 3: Coder (Implementation)
-    coder_options={
-        'num_ctx': 16384,
-        'num_predict': 5000,
-        'temperature': 0.1,    # Strict adherence to syntax
-        'repeat_penalty': 1.00 # No penalty to allow code structure
-    }
+    def get_coder_options(model_name: str):
+        """
+        Returns optimal inference parameters based on the specific model architecture.
+        """
+        model_id = model_name.lower()
+        
+        # =========================================================
+        # GROUP A: REASONING & THINKING MODELS
+        # Needs: High Temp (to think), High Output Limit (trace + code)
+        # =========================================================
+        # Keywords based on your provided list:
+        reasoning_keywords = [
+            "deepseek-r1", 
+            "openthinker", 
+            "qwen3:30b-a3b-thinking", 
+            "gpt-oss", 
+            "cogito"
+        ]
+        
+        if any(k in model_id for k in reasoning_keywords):
+            return {
+                # MEMORY: 24k fits comfortably in 36GB RAM with 32b weights
+                "num_ctx": 24576,        
+                
+                # OUTPUT: 8k allows ~6k tokens of "Thinking" + 2k code
+                "num_predict": 8192,     
+                
+                # CREATIVITY: 0.6 prevents "thought loops" common in low-temp reasoning
+                "temperature": 0.6,      
+                "top_p": 0.95,
+                
+                # STOPS: Standard + Thinking tags to prevent hallucinations
+                "stop": ["<|end_of_text|>", "<|user|>", "User:", "</think>"] 
+            }
+        
+        # =========================================================
+        # GROUP B: STANDARD CODERS & INSTRUCT MODELS
+        # Needs: Low Temp (precision), Moderate Output (code only)
+        # =========================================================
+        # Covers: granite-code, gemma3, qwen3-coder, exaone, nemotron, devstral, llama3.2-vision
+        else:
+            return {
+                # MEMORY: Standard 16k is sufficient for code-only tasks
+                "num_ctx": 16384,        
+                
+                # OUTPUT: 4k is plenty for just Python code (no thinking trace)
+                "num_predict": 4096,     
+                
+                # PRECISION: 0.1 forces the model to pick the most likely syntax
+                "temperature": 0.1,      
+                "top_p": 0.5,            # Focus on high-probability tokens
+                "repeat_penalty": 1.1,   # Slight penalty to reduce loops
+                
+                # STOPS: Standard instruction stops
+                #"stop": ["<|end_of_text|>", "<|eot_id|>", "User:", "<|file_separator|>"] 
+            }
+        
     # gpt_oss has 3 thinking levels : low, medium, high
     gpt_think_level = "low"
 
@@ -44,11 +95,11 @@ class Config:
     analyst_task = "diagnose_agent_v03"
     analyst_template = (analyst_role, analyst_task)
  
-    formatter_role = "formatter_v01"
+    formatter_role = "formatter_v02"
     formatter_task = "format_v03"
     formatter_template = (formatter_role, formatter_task)
 
-    formatter_fix_role = "formatter_v01"
+    formatter_fix_role = "formatter_v02"
     formatter_fix_task = "format_fix"
     formatter_fix_template = (formatter_role, formatter_task)
 

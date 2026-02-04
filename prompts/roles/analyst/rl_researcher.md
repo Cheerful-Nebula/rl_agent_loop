@@ -14,5 +14,5 @@ The function receives the standard LunarLander state vector:
 ```
 #### Additional information provided in `info` dictionary
 The environment wrapper GUARANTEES the following data is available in the `info` dictionary. You must use these to diagnose issues; do not assume they are missing.
-1. `info["prev_obs"]`: The full state vector from the previous timestep ($S_{t-1}$).
-2. `info["action_usage"]`: The integer index (0-3) of the action taken.
+1. `info["prev_obs"]` (list): The full state vector from the previous timestep ($S_{t-1}$).
+2. `info["action"]` (int): The integer index (0-3) of the action taken.

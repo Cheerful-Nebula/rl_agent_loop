@@ -19,8 +19,8 @@ def calculate_reward(observation, info):
                             [x_pos, y_pos, x_vel, y_vel, angle, ang_vel, leg_1, leg_2]
         info (dict): A dictionary containing action usage data and previous observation.
         
-                        - info["prev_obs"] :Observation vector from previous `step()` call
-                        - info["action_usage"]: Index of the action taken (0-3)
+                        - info["prev_obs"] (list) :Observation vector from previous `step()` call
+                        - info["action"] (int) : Index of the action taken (0-3)
    
 
     

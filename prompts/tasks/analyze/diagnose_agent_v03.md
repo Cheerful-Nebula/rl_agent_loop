@@ -7,8 +7,8 @@
 - **Goal:** A controlled descent with minimal tilt in the center (0,0).
 
 **Success Metrics:**
-- `reward_success_rate`: % of episodes with Reward >= 200.
-- `pos_success_rate`: % of episodes landing within 0.1 radius of center.
+- `reward_success_rate`: % of episodes with Reward >= 100.
+- `pos_success_rate`: % of episodes landing legs in contact with ground and within 0.1 radius of center.
 - `crash_rate`: % of episodes ending in a crash (Reward <= -100).
 
 **Diagnostic Metrics:**
@@ -19,6 +19,21 @@
 
 ## The 2 Diagnostic Views
 Analyze these two views comparatively to determine if the failure is due to **Learning** (Agent can't optimize the signal) or **Alignment** (Agent optimizes the signal, but the signal doesn't lead to landing).
+
+### Performance Table
+```json
+{configuration_json}
+```
+{performance_table}
+
+{training_table}
+
+```python
+{current_code}
+```
+
+## Experiment Logs
+{short_term_history}
 
 ## What You Must Produce
 
