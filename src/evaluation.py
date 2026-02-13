@@ -27,7 +27,6 @@ def summarize_eval(iteration: int,stats: dict, tracker : PositionTracker) -> dic
                     "position_success_rate": round(stats["pos_success_rate"], 4),
                     "crash_rate": round(stats["crash_rate"], 4),
                     "raw_episode_lengths": stats["raw_lengths"],   # For Survival Analysis (Kaplan-Meier)
-                   # "raw_outcomes": stats["raw_outcomes"],
                     # Diagnostics
                     "avg_x_position": round(float(tracker.rollout_pts_agg[0]['avg']), 4),
                     "avg_descent_velocity": round(float(tracker.rollout_pts_agg[3]['avg']), 4),
@@ -104,7 +103,7 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
     ws = ExperimentWorkspace()
     
     # --- PASS 1: STANDARD EVALUATION (The Objective Truth) ---
-    print(f"📊 Eval Pass 1: Standard Environment,{"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"}...")
+    print(f"📊 Eval Pass 1: Standard Environment,{"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"} ")
     std_env = utils.make_env() 
     std_tracker = PositionTracker([0, 3, 4], 0, Config.ALGORITHM, Config.ENV_ID)
     std_stats = run_single_eval_pass(std_env, model, num_episodes, deterministic_flag= deterministic, tracker = std_tracker)
@@ -113,7 +112,7 @@ def evaluate_agent(model, iteration, deterministic= True, reward_code_path=None,
 
     # --- PASS 2: SHAPED EVALUATION (The Agent's Reality) ---
     if reward_code_path:
-        print(f"📊 Eval Pass 2: Shaped Environment, {"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"}...")
+        print(f"📊 Eval Pass 2: Shaped Environment, {"Deterministic Behavior" if deterministic == True else "Stochastic Behavior"} ")
         shp_env = utils.make_env(reward_code_path)
         shp_tracker = PositionTracker([0, 3, 4], 0, Config.ALGORITHM, Config.ENV_ID)
         shp_stats = run_single_eval_pass(shp_env, model, num_episodes, deterministic_flag= deterministic, tracker = shp_tracker)

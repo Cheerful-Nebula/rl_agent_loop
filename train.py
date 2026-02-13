@@ -72,14 +72,14 @@ def run_training_cycle(iteration):
         # Per-iteration CSV: telemetry_raw/progress_XXX.csv
         make_output_format("csv",        str(logger_dir), suffix),
 
-        # Per-iteration TensorBoard events: tensorboard/Iter_XXX/events.out.tfevents...
+        # Per-iteration TensorBoard events: tensorboard/Iter_XXX/events.out.tfevents
         make_output_format("tensorboard", str(tb_log_dir), ""),
     ]
     logger = Logger(folder=str(logger_dir), output_formats=output_formats)
 
     lr_schedule = linear_schedule(1e-3, 3e-4)
     # 6. Train
-    print(f"🏋️ Training on {device}...")
+    print(f"🏋️ Training on {device}")
     model = PPO(
         "MlpPolicy",
         env,
@@ -105,7 +105,7 @@ def run_training_cycle(iteration):
     model_save_path = ws.get_path("models", iteration, "model")
     model.save(model_save_path)
     
-    print("📊 Running Evaluation...")
+    print("📊 Running Evaluation")
 
     # Collect Evaluation Statistics and Merge 
     base_det_stats, shaped_det_stats = evaluate_agent(model, 
@@ -140,7 +140,7 @@ def run_training_cycle(iteration):
 
     
     # Creating plots of the training metrics for VLM
-    plot_training_iteration(iteration,logger_dir/ f"progress_{iteration:02d}.csv")
+    #plot_training_iteration(iteration,logger_dir/ f"progress_{iteration:02d}.csv")
     # 8. Data that will be given to controller analyst
     metrics_payload = {
         "timestamp": datetime.now().isoformat(),

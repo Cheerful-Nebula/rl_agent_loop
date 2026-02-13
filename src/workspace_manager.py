@@ -2,6 +2,7 @@ import os
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Any
 
 class ExperimentWorkspace:
     def __init__(self, base_dir="experiments"):
@@ -72,7 +73,7 @@ class ExperimentWorkspace:
     def get_path(self, category, iteration, filename):
         """
         Returns a sorted, standardized path for a file.
-        Example: .../llama3.1-8b/cognition/iter05_reasoning.md
+        Example:  .../llama3.1-8b/cognition/iter05_reasoning.md
         """
         if category not in self.dirs:
             raise ValueError(f"Category '{category}' not defined in workspace.")
@@ -106,8 +107,11 @@ class ExperimentWorkspace:
         with open(filepath, "w") as f:
             json.dump(metrics_dict, f, indent=4)
 
-    def load_metrics(self, iteration):
-        """Loads the JSON report card from a specific iteration."""
+    def load_metrics(self, iteration:int) -> dict[Any, Any]:
+        """
+        Loads the JSON containing metrics from a specific iteration.
+        Returns a Python Dictionary Object
+        """
         filepath = self.get_path("telemetry_raw", iteration, "metrics.json")
         if not filepath.exists():
             return None

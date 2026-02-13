@@ -79,7 +79,7 @@ def get_inital_shaping():
                 f.write(f"# Error: {feedback}\n")
                 f.write(clean_code)
             
-        print(f"🔧 Fixing Code...")
+        print(f"🔧 Fixing Code ")
         
         fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
         

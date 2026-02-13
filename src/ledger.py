@@ -101,15 +101,15 @@ class ExperimentLedger:
         rows = []
         
         for exp in recent:
-            changes = str(exp.get("config_changes", "{}"))[:50]
+            changes = str(exp.get("config_changes", "{}"))
             metrics = " ".join([f"{k}:{v}" for k,v in exp["metrics"].items()])
             
             # The Critical Column: Did the prediction work?
             val = exp.get("validation", {})
             outcome_str = "✅ VALIDATED" if val.get("is_validated") else "❌ REFUTED"
-            reason_str = val.get("reasoning", "")[:60] # Truncate for token limit
+            reason_str = val.get("reasoning", "") # Truncate for token limit
             
-            row = f"| {exp['id']} | {exp['hypothesis'][:60]} | {changes} | {metrics} | {outcome_str}: {reason_str} |"
+            row = f"| {exp['id']} | {exp['hypothesis']} | {changes} | {metrics} | {outcome_str}: {reason_str} |"
             rows.append(row)
             
         return "\n".join([headers, divider] + rows)

@@ -1,67 +1,48 @@
 from . import loader
 import json
-from src.utils import performance_telemetry_as_table,training_telemetry_as_table
+from typing import Any
+from src.utils import performance_telemetry_as_table,training_telemetry_as_table,format_diagnostician_input
 
 
-def build_diagnosis_prompt(template: tuple[str,str],
-                           metrics_json: json,
-                           current_code,
-                           long_term_memory,
-                           short_term_history)-> tuple[str,str]:
+def build_training_diagnosis_prompt(template: tuple[str,str], metrics: dict[Any,Any])-> tuple[str,str]:
     """
-    Builds a multi-configuration LLM diagnosis prompt.
-
-    Parameters
-    ----------
-    metrics_json : list[dict]
-        A list where each element is:
-        {
-
-        }
-
-    
-    current_code : str
-        Current reward function code.
-    
-    long_term_memory : str
-        Persistent memory summary.
-    
-    short_term_history : str
-        Dialogue or evaluation context.
+    Builds a LLM prompt - diagnosising PPO training optimization
     """
 
-    # Load RL Researcher persona
+    # Grab system prompt
     system_role = loader.load_template("roles", "analyst", template[0])
-    metrics_json["n_updates"] = metrics_json["training_dynamics"]["n_updates"]
 
-    # Converting data from JSON to formated markdown tables
-    performance_table= performance_telemetry_as_table(metrics_json["performance"])
-    training_table= training_telemetry_as_table(metrics_json["training_dynamics"])
-
-    # Deleteing unneccesary keys, such as those that were just converted to markdown
-    del metrics_json["performance"]
-    del metrics_json["training_dynamics"]
-    del metrics_json["timestamp"]
-    del metrics_json["source_code_path"]
-    metrics_json["timesteps"]=metrics_json["config"]["total_timesteps"]
-    metrics_json["num_updates"]=metrics_json["n_updates"]["total"]
-    del metrics_json["config"]
-    del metrics_json["n_updates"]
-    
-    # Format the JSON blob for the template
-    metrics_json_str = json.dumps(metrics_json, indent=4)
+    # Converting data to formated markdown tables
+    #training_table= training_telemetry_as_table(metrics["training_dynamics"])
+    training_table= format_diagnostician_input(metrics)
 
     # Load the diagnosis task template
     task_template = loader.load_template("tasks", "analyze",template[1])
 
     # Build user task
     user_task = task_template.format(
-        performance_table = performance_table,
-        training_table=training_table,
-        configuration_json=metrics_json_str,
-        long_term_memory=long_term_memory,
-        short_term_history=short_term_history,
-        current_code=current_code if current_code else "# No previous code"
+        training_table=training_table
+    )
+
+    return system_role, user_task
+
+def build_performance_diagnosis_prompt(template: tuple[str,str], metrics: dict[Any,Any])-> tuple[str,str]:
+    """
+    Builds a LLM prompt - diagnosising PPO training optimization
+    """
+
+    # Grab system prompt
+    system_role = loader.load_template("roles", "analyst", template[0])
+
+    # Converting data to formated markdown tables
+    performance_table= performance_telemetry_as_table(metrics["performance"])
+
+    # Load the diagnosis task template
+    task_template = loader.load_template("tasks", "analyze",template[1])
+
+    # Build user task
+    user_task = task_template.format(
+        performance_table=performance_table
     )
 
     return system_role, user_task

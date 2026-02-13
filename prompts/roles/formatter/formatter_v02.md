@@ -16,8 +16,6 @@ Extract information from the input text and map it strictly to the following JSO
 
 "hyperparameters": Numerical configuration changes for PPO (e.g., Learning Rate, Gamma, Entropy Coefficient). Keep exact values.
 
-"lesson": Generalizable RL insights or principles learned to inform future iterations.
-
 ## Strict Output Rules:
 
 Output ONLY raw JSON. Do not output markdown code blocks (no ```json wrappers).

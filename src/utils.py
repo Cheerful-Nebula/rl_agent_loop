@@ -15,6 +15,8 @@ from stable_baselines3.common.monitor import Monitor
 from typing import Tuple
 import pandas as pd
 from textwrap import indent
+import numpy as np
+from scipy import stats
 
 # -- Custom IMPORTS --
 from src.wrappers import DynamicRewardWrapper
@@ -132,7 +134,15 @@ def convert_formatter_json_to_markdown(data: dict) -> str:
             md_lines.append(str(data["hyperparameters"]))
         md_lines.append("")
 
-    return "\n".join(md_lines)
+    markdown_str = "\n".join(md_lines)
+
+    fallback = []
+    for key , value in data.items():
+        fallback.append(str(key))
+        fallback.append(str(value))
+        fallback.append("")
+
+    return markdown_str if not markdown_str.strip() else "\n".join(fallback) 
 
 def plan_json_to_markdown(plan_json: str) -> str:
     """
@@ -267,63 +277,7 @@ def make_env(reward_code_path:str | None = None):
 # ---------------------------------------------------------
 # SCIENTIFIC LOGGING & ANALYSIS
 # ---------------------------------------------------------
-def update_campaign_summary(ws, iteration, metrics):
-    """
-    Appends a summary row to the master campaign CSV file.
-    Acts as the 'Scoreboard' for the entire experiment.
-    """
-    csv_path = ws.model_root_path / "campaign_summary.csv"
-    
-    headers = [
-            "Iteration", "Timestamp", 
-            # Eval Metrics
-            "Eval_Reward_Mean", "Eval_Reward_Std", "Eval_Ep_Len_Mean",
-            "Reward_Success_Rate", "Position_Success_Rate", "Crash_Rate", 
-            # Training Metrics (TensorBoard)
-            "Train_Reward_Mean", "Entropy_End", "Value_Loss_Avg", "Policy_Loss_End",
-            # Diagnostics
-            "Fuel_Efficiency", "Stability_Index", "Generation_Status"
-        ]
-    
-    perf = metrics.get("performance", {})
-    diag = perf.get("diagnostics", {})
-    train_dyn = metrics.get("training_dynamics", {})
-    status = metrics.get("generation_status", "unknown") # Passed from controller
-    
-    row_data = {
-            "Iteration": iteration,
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            
-            "Eval_Reward_Mean": round(perf.get("mean_reward", 0), 2),
-            "Eval_Reward_Std": round(perf.get("std_reward", 0), 2),
-            "Eval_Ep_Len_Mean": round(perf.get("mean_ep_length", 0), 2),
-            "Reward_Success_Rate": round(perf.get("reward_success_rate", 0), 2),
-            "Position_Success_Rate": round(perf.get("position_success_rate", 0), 2),
-            "Crash_Rate": round(perf.get("crash_rate", 0), 2),
-            
-            "Train_Reward_Mean": round(train_dyn.get("raw_train_reward", 0), 2),
-            "Entropy_End": round(train_dyn.get("raw_entropy", 0), 4),
-            "Value_Loss_Avg": round(train_dyn.get("raw_value_loss", 0), 4),
-            "Policy_Loss_End": round(train_dyn.get("raw_policy_loss", 0), 4),
-            
-            "Fuel_Efficiency": round(diag.get("main_engine_usage", 0), 4),
-            "Stability_Index": round(diag.get("vertical_stability_index", 0), 4),
-            "Generation_Status": status
-        }
-
-    file_exists = csv_path.exists()
-    
-    with open(csv_path, mode='a', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=headers)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row_data)
-        
-    print(f"📈 Campaign Summary updated: {csv_path}")
-
-
-
-def summarize_training_log(ws: ExperimentWorkspace, iteration: int)-> json:
+def summarize_training_log_old(ws: ExperimentWorkspace, iteration: int)-> json:
    log_path =  ws.dirs["telemetry_training"] / f"progress_{iteration:02d}.csv"
    df = pd.read_csv(log_path)
    training_summary= {
@@ -369,7 +323,357 @@ def summarize_training_log(ws: ExperimentWorkspace, iteration: int)-> json:
    #training_summary_json = json.dumps(training_summary_json, indent=4)
 
    return training_summary
+# ==============================================================================
+# Testing new summarizing training log functions
+# ==============================================================================
 
+
+def compute_trend_consistency(values: np.ndarray) -> str:
+    """Characterize trend pattern without absolute thresholds."""
+    if len(values) < 3:
+        return "insufficient_data"
+    
+    diffs = np.diff(values)
+    
+    # Check for monotonicity
+    if np.all(diffs >= 0):
+        return "monotonic_increasing"
+    elif np.all(diffs <= 0):
+        return "monotonic_decreasing"
+    
+    # Check for high volatility
+    sign_changes = np.sum(np.diff(np.sign(diffs)) != 0)
+    volatility_ratio = sign_changes / len(diffs)
+    
+    if volatility_ratio > 0.4:
+        return "noisy"
+    elif volatility_ratio > 0.2:
+        return "oscillating"
+    else:
+        return "mostly_monotonic"
+
+
+#def summarize_training_log(ws: ExperimentWorkspace, iteration: int):
+    """
+    Summarize training metrics with relational features for generalization.
+    
+    Provides:
+    1. Tertile temporal splits (first/middle/final third means)
+    2. Relational features (ratios, change rates)
+    3. Coupling indicators (metric interactions)
+    4. Trend characterizations (monotonicity, volatility)
+    """
+ #   log_path = ws.dirs["telemetry_training"] / f"progress_{iteration:02d}.csv"
+ #   df = pd.read_csv(log_path)
+def summarize_training_log(df):
+    # Calculate tertile split indices
+    n = len(df)
+    first_third_end = n // 3
+    second_third_end = 2 * n // 3
+    
+    # Define metrics to track
+    metrics = [
+        'train/policy_gradient_loss',
+        'train/approx_kl',
+        'train/loss',
+        'train/explained_variance',
+        'train/entropy_loss',
+        'train/value_loss',
+        'train/clip_fraction'
+    ]
+    
+    training_summary = {}
+    raw_data = {}  # Store for relational computations
+    
+    # Compute tertile statistics for each metric
+    for metric in metrics:
+        metric_name = metric.replace('train/', '')
+        
+        values = df[metric].values
+        first_third = values[:first_third_end]
+        middle_third = values[first_third_end:second_third_end]
+        final_third = values[second_third_end:]
+        
+        training_summary[metric_name] = {
+            "first_third_mean": np.mean(first_third).round(4) if len(first_third) > 0 else 0,
+            "middle_third_mean": np.mean(middle_third).round(4) if len(middle_third) > 0 else 0,
+            "final_third_mean": np.mean(final_third).round(4) if len(final_third) > 0 else 0,
+            "overall_median": np.median(values).round(4),
+        }
+        
+        # Store raw data for relational features
+        raw_data[metric_name] = {
+            'first': first_third,
+            'middle': middle_third,
+            'final': final_third,
+            'all': values
+        }
+    
+    # === RELATIONAL FEATURES (scale-invariant) ===
+    
+    def safe_ratio(numerator, denominator, default=1.0):
+        """Compute ratio with protection against division by zero."""
+        if abs(denominator) < 1e-8:
+            return default
+        return round(numerator / denominator, 4)
+    
+    def safe_change_rate(start, end):
+        """Compute relative change rate."""
+        if abs(start) < 1e-8:
+            return 0.0
+        return round((end - start) / abs(start), 4)
+    
+    ev_first = training_summary['explained_variance']['first_third_mean']
+    ev_middle = training_summary['explained_variance']['middle_third_mean']
+    ev_final = training_summary['explained_variance']['final_third_mean']
+    
+    vl_first = training_summary['value_loss']['first_third_mean']
+    vl_final = training_summary['value_loss']['final_third_mean']
+    
+    ent_first = abs(training_summary['entropy_loss']['first_third_mean'])
+    ent_final = abs(training_summary['entropy_loss']['final_third_mean'])
+    
+    kl_first = training_summary['approx_kl']['first_third_mean']
+    kl_middle = training_summary['approx_kl']['middle_third_mean']
+    kl_final = training_summary['approx_kl']['final_third_mean']
+    
+    cf_mean = training_summary['clip_fraction']['overall_median']
+    
+    training_summary["_relational"] = {
+        # Improvement factors (how much did things change?)
+        "ev_improvement_factor": safe_ratio(ev_final, max(ev_first, 1e-4)),
+        "value_loss_reduction_factor": safe_ratio(vl_first, max(vl_final, 1)),
+        "entropy_decay_rate": safe_change_rate(ent_first, ent_final),
+        
+        # Learning rate comparisons (which component learned faster?)
+        "critic_vs_policy_learning_ratio": safe_ratio(
+            safe_ratio(vl_first, max(vl_final, 1)),  # critic improvement
+            safe_ratio(ent_first, max(ent_final, 1e-4))  # policy convergence
+        ),
+        
+        # Volatility measures
+        "kl_coefficient_of_variation": safe_ratio(
+            np.std(raw_data['approx_kl']['all']),
+            np.mean(raw_data['approx_kl']['all'])
+        ) if len(raw_data['approx_kl']['all']) > 1 else 0,
+        
+        "ev_coefficient_of_variation": safe_ratio(
+            np.std(raw_data['explained_variance']['all']),
+            np.mean(raw_data['explained_variance']['all'])
+        ) if len(raw_data['explained_variance']['all']) > 1 else 0,
+    }
+    
+    # === COUPLING INDICATORS (metric interactions) ===
+    
+    training_summary["_coupling"] = {
+        # Policy update characteristics
+        "updates_conservative": (kl_final < kl_first) and (cf_mean < 0.05),
+        "updates_aggressive": (kl_middle > kl_first * 1.5) and (cf_mean > 0.1),
+        
+        # Reward signal patterns
+        "late_phase_ev_breakthrough": (ev_final > ev_middle * 2) and (ev_middle < 0.2),
+        "early_phase_ev_plateau": (ev_middle > 0.5) and (abs(ev_final - ev_middle) < 0.1),
+        
+        # Actor-critic synchronization
+        "critic_bottleneck": (ev_final < 0.3) and (kl_final < kl_first),
+        "weak_gradients_despite_good_critic": (ev_final > 0.6) and (kl_final < 0.01),
+        
+        # Exploration patterns
+        "premature_convergence": (ent_final / ent_first < 0.5) and (ev_final < 0.5),
+        "maintained_exploration": (ent_final / ent_first > 0.8),
+    }
+    
+    # === TREND CHARACTERIZATIONS ===
+    
+    training_summary["_trends"] = {
+        "explained_variance_pattern": compute_trend_consistency(raw_data['explained_variance']['all']),
+        "value_loss_pattern": compute_trend_consistency(raw_data['value_loss']['all']),
+        "approx_kl_pattern": compute_trend_consistency(raw_data['approx_kl']['all']),
+        "entropy_pattern": compute_trend_consistency(raw_data['entropy_loss']['all']),
+    }
+    
+    # === METADATA ===
+    """
+    training_summary["_metadata"] = {
+        "n_updates": int(df['train/n_updates'].iloc[-1]),
+        "n_steps": len(df),
+        "first_third_steps": first_third_end,
+        "middle_third_steps": second_third_end - first_third_end,
+        "final_third_steps": n - second_third_end,
+        "learning_rate": df['train/learning_rate'].iloc[-1].round(6),
+        "clip_range": df['train/clip_range'].iloc[-1].round(4),
+    }
+    """
+    return training_summary
+# ==============================================================================
+# Testing out new training data formating function that goes with new summarize_training_log()
+# ==============================================================================
+def format_diagnostician_input(training_summary: dict) -> str:
+    """
+    Format training summary into structured markdown for diagnostician prompt.
+    
+    Args:
+        training_summary: Output from summarize_training_log()
+    
+    Returns:
+        Formatted markdown string with:
+        - Raw metrics table
+        - Relational features
+        - Coupling indicators
+        - Trend patterns
+    """
+    
+    # ========================================================================
+    # SECTION 1: Raw Metrics Table
+    # ========================================================================
+    
+    metric_order = [
+        'policy_gradient_loss',
+        'approx_kl',
+        'loss',
+        'explained_variance',
+        'entropy_loss',
+        'value_loss',
+        'clip_fraction'
+    ]
+    
+    table_lines = [
+        "## Training Metrics Table",
+        "",
+        "| metric | first_third_mean | middle_third_mean | final_third_mean | overall_median |",
+        "|--------|------------------|-------------------|------------------|----------------|"
+    ]
+    
+    for metric in metric_order:
+        if metric in training_summary:
+            data = training_summary[metric]
+            line = (
+                f"| {metric} | "
+                f"{data['first_third_mean']} | "
+                f"{data['middle_third_mean']} | "
+                f"{data['final_third_mean']} | "
+                f"{data['overall_median']} |"
+            )
+            table_lines.append(line)
+    
+    raw_table = "\n".join(table_lines)
+    
+    # ========================================================================
+    # SECTION 2: Relational Features
+    # ========================================================================
+    
+    relational = training_summary.get("_relational", {})
+    
+    relational_section = [
+        "",
+        "## Derived Features",
+        "",
+        "### Relational Features (Scale-Invariant)",
+        ""
+    ]
+    
+    relational_items = [
+        ("EV improvement factor", relational.get("ev_improvement_factor", "N/A")),
+        ("Value loss reduction factor", relational.get("value_loss_reduction_factor", "N/A")),
+        ("Entropy decay rate", relational.get("entropy_decay_rate", "N/A")),
+        ("Critic vs policy learning ratio", relational.get("critic_vs_policy_learning_ratio", "N/A")),
+        ("KL coefficient of variation", relational.get("kl_coefficient_of_variation", "N/A")),
+        ("EV coefficient of variation", relational.get("ev_coefficient_of_variation", "N/A"))
+    ]
+    
+    for label, value in relational_items:
+        relational_section.append(f"- **{label}**: {value}")
+    
+    relational_text = "\n".join(relational_section)
+    
+    # ========================================================================
+    # SECTION 3: Coupling Indicators
+    # ========================================================================
+    
+    coupling = training_summary.get("_coupling", {})
+    
+    coupling_section = [
+        "",
+        "### Coupling Indicators (Diagnostic Patterns)",
+        ""
+    ]
+    
+    coupling_items = [
+        ("Updates conservative", coupling.get("updates_conservative", False)),
+        ("Updates aggressive", coupling.get("updates_aggressive", False)),
+        ("Late phase EV breakthrough", coupling.get("late_phase_ev_breakthrough", False)),
+        ("Early phase EV plateau", coupling.get("early_phase_ev_plateau", False)),
+        ("Critic bottleneck", coupling.get("critic_bottleneck", False)),
+        ("Weak gradients despite good critic", coupling.get("weak_gradients_despite_good_critic", False)),
+        ("Premature convergence", coupling.get("premature_convergence", False)),
+        ("Maintained exploration", coupling.get("maintained_exploration", False))
+    ]
+    
+    for label, value in coupling_items:
+        status = "✓ **TRUE**" if value else "✗ false"
+        coupling_section.append(f"- {label}: {status}")
+    
+    coupling_text = "\n".join(coupling_section)
+    
+    # ========================================================================
+    # SECTION 4: Trend Patterns
+    # ========================================================================
+    
+    trends = training_summary.get("_trends", {})
+    
+    trends_section = [
+        "",
+        "### Trend Patterns (Stability Analysis)",
+        ""
+    ]
+    
+    trend_items = [
+        ("Explained variance", trends.get("explained_variance_pattern", "unknown")),
+        ("Value loss", trends.get("value_loss_pattern", "unknown")),
+        ("Approx KL", trends.get("approx_kl_pattern", "unknown")),
+        ("Entropy", trends.get("entropy_pattern", "unknown"))
+    ]
+    
+    for label, pattern in trend_items:
+        trends_section.append(f"- **{label}**: `{pattern}`")
+    
+    trends_text = "\n".join(trends_section)
+    
+    # ========================================================================
+    # SECTION 5: Metadata (Optional Context)
+    # ========================================================================
+    
+    metadata = training_summary.get("_metadata", {})
+    
+    metadata_section = [
+        "",
+        "### Training Context",
+        "",
+        f"- **Total updates**: {metadata.get('n_updates', 'N/A')}",
+        f"- **Total steps logged**: {metadata.get('n_steps', 'N/A')}",
+        f"- **Steps per phase**: First={metadata.get('first_third_steps', 'N/A')}, "
+        f"Middle={metadata.get('middle_third_steps', 'N/A')}, "
+        f"Final={metadata.get('final_third_steps', 'N/A')}",
+        ""
+    ]
+    
+    metadata_text = "\n".join(metadata_section)
+    
+    # ========================================================================
+    # COMBINE ALL SECTIONS
+    # ========================================================================
+    
+    full_output = "\n".join([
+        raw_table,
+        relational_text,
+        coupling_text,
+        trends_text,
+        metadata_text
+    ])
+    
+    return full_output
+# ==============================================================================
+# ==============================================================================
 def generate_patch(old_code: str, new_code: str, filename: str) -> str:
     """Compares two source strings and returns a Unified Diff."""
     diff = difflib.unified_diff(
@@ -413,7 +717,9 @@ def linear_schedule(initial_value: float, final_value: float):
         """
         Progress will decrease from 1 (beginning) to 0 (end).
         """
-        return final_value + (initial_value - final_value) * progress_remaining
+        lr = final_value + (initial_value - final_value) * progress_remaining
+        print(f"Progress: {progress_remaining:.3f} → LR: {lr:.6f}")
+        return lr
 
     return func
 
@@ -581,7 +887,7 @@ def training_telemetry_as_table(stats_list: list[dict]) -> str:
      
     # Define the columns we want to compare
     headers = [
-        "metric", "start","median","mean","end"
+        "metric", "start","end","median","mean",
     ]
     
     # Create the header row
@@ -595,20 +901,24 @@ def training_telemetry_as_table(stats_list: list[dict]) -> str:
         "approx_kl",
         "loss",
         "explained_variance",
-        "clip_range",
         "entropy_loss",
         "value_loss",
-        "clip_fraction",
-        "learning_rate"
+        "clip_fraction"
         ]
     for key in key_list:
-        # Pre-calculate/format values to reduce token noise
+        # LLMs trained a vast amount of data related to loss curves, this specific 
+        # implementation of where stablebaselines3 defined entropy_loss as the negative
+        # of entropy confuses LLMs when diagnosing training optimization metrics
+        if key == "entropy_loss":
+            stats_list['entropy'] = {k: -v for k, v in stats_list["entropy_loss"].items()}
+            key = "entropy" # Rename for LLM clarity
+
         row = [
             key,
             f"{stats_list[key]["start"]}",
+            f"{stats_list[key]["end"]}",
             f"{stats_list[key]["median"]}",
-            f"{stats_list[key]["mean"]}",
-            f"{stats_list[key]["end"]}"
+            f"{stats_list[key]["mean"]}"
         ]
         table.append("| " + " | ".join(row) + " |")
 

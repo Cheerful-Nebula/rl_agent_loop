@@ -13,9 +13,8 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${GREEN}Starting Inner Loop for $MAX_LOOPS iterations...${NC}"
+echo -e "${GREEN}Starting Inner Loop for $MAX_LOOPS iterations ${NC}"
 
-# We use a standard Bash C-style loop for cleanliness
 for (( i=1; i<=MAX_LOOPS; i++ ))
 do
     echo -e "\n${BLUE}=========================================="
@@ -23,11 +22,11 @@ do
     echo -e "==========================================${NC}"
 
     # 1. Train the Agent
-    echo -e "${GREEN}[Step 1] Training Agent (Iteration $i)...${NC}"
+    echo -e "${GREEN}[Step 1] Training Agent (Iteration $i) ${NC}"
     python3 "$TRAINING_SCRIPT" --iteration "$i"
 
     # 2. Improve the Code
-    echo -e "${GREEN}[Step 2] Designing New Reward Function (Iteration $i)...${NC}"
+    echo -e "${GREEN}[Step 2] Designing New Reward Function (Iteration $i) ${NC}"
     MODULE_PATH=$(echo "$CONTROLLER_SCRIPT" | sed 's/\//./g' | sed 's/\.py//g')
     python3 -m "$MODULE_PATH" --iteration "$i"
 

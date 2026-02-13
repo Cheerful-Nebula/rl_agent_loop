@@ -14,11 +14,11 @@ from src import utils
 from src.config import Config
 from src.llm_utils import *
 from src.cognitive_node import CognitiveNode
-from src.ledger import ExperimentLedger  # <--- NEW IMPORT
+from src.ledger import ExperimentLedger
 
 MODEL_NAME = Config.LLM_MODEL
 MAX_RETRIES = 5 
-# Define your chosen roster here (Copy-pasted from our chat)
+# Define your chosen roster here ( will be creating a script that contains teams of LLMs)
 if MODEL_NAME == "gemma3:27b": # Deep Reasoning Team
     # Team 1: Deep Logic
     ACTIVE_ROSTER = {
@@ -30,18 +30,18 @@ if MODEL_NAME == "gemma3:27b": # Deep Reasoning Team
 elif MODEL_NAME == "openthinker:32b": # Maximum Safety Team
     # Team 2: Maximum Safety
     ACTIVE_ROSTER ={
-        "architect": "openthinker:32b",   # Balanced, risk-averse planning
-        "formatter": "nemotron-3-nano:30b", # Reliable data entry
-        "coder":     "qwen3-coder:30b",   # Fast, competent coding
-        "validator": "llama3.2-vision:11b" # The "Gatekeeper" - Refutes 80% of bad ideas
+        "architect": "deepseek-r1:32b",   
+        "formatter": "nemotron-3-nano:30b", 
+        "coder":     "qwen3-coder:30b",   
+        "validator": "openthinker:32b" 
         }
 elif MODEL_NAME == "nemotron-3-nano:30b": # Maximum Throughput Team
     # Team 3: Speed Run (The Stable Loop)
     ACTIVE_ROSTER={
-        "architect": "nemotron-3-nano:30b", # Fast, structured planning
-        "formatter": "nemotron-3-nano:30b", # (Self-formatting)
-        "coder":     "qwen3-coder:30b",      # Fast execution
-        "validator": "openthinker:32b"    # Nuanced verdicts (keeps loop moving)
+        "architect": "nemotron-3-nano:30b", 
+        "formatter": "nemotron-3-nano:30b", 
+        "coder":     "qwen3-coder:30b",      
+        "validator": "openthinker:32b"  
     }
 else:
     # Fallback / Default
@@ -58,7 +58,7 @@ def run_agentic_improvement(iteration):
     # 1. Initialize Workspace, Brain, and Memory
     ws = ExperimentWorkspace()
     brain = CognitiveNode(iteration=iteration, workspace=ws, model=MODEL_NAME)
-    brain_memory = ExperimentLedger(ws.model_root_path) # Initialize Experiment Ledger
+    brain_memory = ExperimentLedger(ws.model_root_path) 
     
     if iteration == 1:
         upsert_model_metadata_row(ws.containers["model_metadata"], MODEL_NAME)
@@ -78,7 +78,7 @@ def run_agentic_improvement(iteration):
         current_code = f.read()
 
     # =========================================================
-    # PHASE 0: HYPOTHESIS VALIDATION (The Causal Check)
+    # PHASE: HYPOTHESIS VALIDATION (The Causal Check)
     # =========================================================
     # We validate the experiment that produced the CURRENT metrics.
     # Logic: Standard(Iter N-1) created Experiment N. Train(Iter N) produced Metrics N.
@@ -90,7 +90,7 @@ def run_agentic_improvement(iteration):
         
         # Guard clause: Ensure we have an experiment to validate (Bypasses Iter 1 / Baseline issues)
         if last_exp:
-            print(f"🔍 Validating Hypothesis from Experiment {last_exp['id']}...")
+            print(f"🔍 Validating Hypothesis from Experiment {last_exp['id']}")
             
             # Format metrics for the validator (Using same table utility as Analyst)
             # We select the first entry in 'performance' which typically contains the summary stats
@@ -126,42 +126,64 @@ def run_agentic_improvement(iteration):
             print(f"ℹ️ Iteration {iteration}: No history in Ledger to validate (Likely Baseline).")
 
     # =========================================================
-    # PHASE 1: DIAGNOSIS & COGNITION SNAPSHOT
+    # PHASE: DIAGNOSIS 
     # =========================================================
-    
-    # D. Long/Short Term Memory
-    # SWAP: Use Ledger Table instead of raw text history
-    short_term_history = brain_memory.get_context_for_llm(limit=5)
-    
-    if iteration != 1:
-        long_term_memory = utils.get_long_term_memory(ws, iteration, MODEL_NAME)
-    else:
-        long_term_memory = "1st Iteration, No Previous History"
-
-    # Build Prompt using our Prompt Builder
-    # Note: metrics_json is modified in-place by build_diagnosis_prompt, so we pass a copy if needed
-    # but here it's fine. utils.performance_telemetry_as_table inside the builder handles the 
-    # filtering to "Stochastic/Shaped" and "Deterministic/Base".
-    diag_role, diag_task = prompts.build_diagnosis_prompt(
-        Config.analyst_template,
+    # Diagnosising PPO agent training optimization 
+    diag_t_role, diag_t_task = prompts.build_training_diagnosis_prompt(
+        Config.diagnose_training_template,
         metrics_json=metrics, 
-        current_code=current_code,
-        long_term_memory=long_term_memory,
-        short_term_history=short_term_history # <--- Injected Validated History
     )
     
-    plan_raw = brain.chat(phase_name='diagnosing',
-                          system_prompt=diag_role, 
-                          user_prompt=diag_task, 
-                          parse_json= False,
+    training_report = brain.chat(phase_name='diagnosing',
+                          system_prompt=diag_t_role, 
+                          user_prompt=diag_t_task, 
                           options=Config.analyst_options)
-
+    
+    # Diagnosising PPO agent performance
+    diag_p_role, diag_p_task = prompts.build_performance_diagnosis_prompt(
+        Config.diagnose_performance_template,
+        metrics_json=metrics, 
+        current_code=current_code,
+    )
+    
+    performance_report = brain.chat(phase_name='diagnosing',
+                          system_prompt=diag_p_role, 
+                          user_prompt=diag_p_task, 
+                          options=Config.analyst_options)
     # =========================================================
-    # PHASE 2: Convert Raw Analysis to Structured Output
+    # PHASE: Strategizing
+    # =========================================================
+    
+    # Build Prompt 
+    strat_role, strat_task = prompts.build_strategist_prompt(Config.strategist_template, diagnostic_report)
+    # LLM call and logging
+    canidate_solutions = brain.chat(phase_name='strategizing',
+                                system_prompt=strat_role,
+                                user_prompt=strat_task,
+                                options=Config.analyst_options)
+                                # model_override=ACTIVE_ROSTER["formatter"])
+    
+    # =========================================================
+    # PHASE: Decision-Making
+    # =========================================================
+    # Use Ledger Table instead of raw text history
+    ledger = brain_memory.get_context_for_llm(limit=10) # grabing the last 10 experiemnt entries for now,
+                                                        # need check context grow over iterations before increasing
+    # Build Prompt 
+    lead_role, lead_task = prompts.build_director_prompt(Config.director_template, canidate_solutions)
+    # LLM call and logging
+    plan_raw = brain.chat(phase_name='decision-making',
+                                system_prompt=lead_role,
+                                user_prompt=lead_task,
+                                ledger=ledger,
+                                options=Config.analyst_options)
+                                # model_override=ACTIVE_ROSTER["formatter"])
+    # =========================================================
+    # PHASE: Generating the 'Work Order'
     # =========================================================
     
     # Build Prompt using our Prompt Builder and the NEW v03 Template
-    format_role, format_task = prompts.build_formatter_prompt(Config.formatter_template, plan_raw)
+    format_role, format_task = prompts.build_formatter_prompt(Config.dispatcher_template, plan_raw)
 
     plan_formatted = brain.chat(phase_name='formatting',
                                 system_prompt=format_role,
@@ -178,7 +200,7 @@ def run_agentic_improvement(iteration):
         # Check for both the object and the critical 'plan' key
         while (plan_formatted is None or not plan_formatted.get('plan')) and format_attempt < MAX_RETRIES:
             format_attempt +=1
-            format_fix_role, format_fix_task = prompts.build_formatter_fix_prompt(Config.formatter_fix_template, plan_raw, json_attempt = plan_formatted)
+            format_fix_role, format_fix_task = prompts.build_formatter_fix_prompt(Config.dispatcher_fix_template, plan_raw, json_attempt = plan_formatted)
 
             plan_formatted = brain.chat(phase_name='formatting_fix',
                                         system_prompt=format_fix_role,
@@ -214,7 +236,7 @@ def run_agentic_improvement(iteration):
             print(f"📝 Lesson saved to {lesson_path}")
 
         # =========================================================
-        # PHASE 4: LOG INTENT (Open New Experiment)
+        # PHASE: LOG INTENT (Open New Experiment)
         # =========================================================
         # We are about to generate code for the NEXT iteration (Iteration + 1).
         # We must log this intent now so it can be validated in the next run.
@@ -257,7 +279,7 @@ def run_agentic_improvement(iteration):
         if is_valid: 
             is_valid, feedback = validator.validate_runtime()
     else:
-        print("⚠️ Initial generation failed (Empty Response). Pushing to fix loop...")
+        print("⚠️ Initial generation failed (Empty Response). Pushing to fix loop ")
         is_valid = False
         feedback = "The model failed to generate any code (Empty Response)."
         # We leave clean_code as just imports so the validator fails immediately below if checked, 
@@ -283,7 +305,7 @@ def run_agentic_improvement(iteration):
                 f.write(clean_code)
             
         previous_attempt_code = clean_code 
-        print(f"🔧 Fixing Code...")
+        print(f"🔧 Fixing Code  ")
         
         fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
         
@@ -296,7 +318,7 @@ def run_agentic_improvement(iteration):
         
         # ### Safety Check 2 (Prevent Crash inside Retry Loop) ###
         if code_fix_response is None:
-             print(f"⚠️ Attempt {attempt_num} failed: Model returned None. Retrying...")
+             print(f"⚠️ Attempt {attempt_num} failed: Model returned None. Retrying  ")
              # Skip extraction and let the loop spin again. 
              # We rely on 'feedback' remaining the same (or you could update it)
              continue 

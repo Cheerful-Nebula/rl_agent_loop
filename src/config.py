@@ -1,9 +1,9 @@
 import os
-import platform
 from dotenv import load_dotenv
 
 # Load variables from .env file into the environment
 load_dotenv()
+
 class Config:
     # 1. Experiment Settings ###################################################################
     ENV_ID = "LunarLander-v3"
@@ -13,9 +13,44 @@ class Config:
     # 2. Dynamic Experiment Directory Name ####################################################
     LLM_MODEL = os.getenv("LLM_MODEL", "qwen2.5-coder")
     CAMPAIGN_TAG = os.getenv("CAMPAIGN_TAG", "Debug_Run")
+    
+    # 3. LLM Prompt Templates ###################################################################
+    diagnose_training_role= "diagnose_training2"
+    diagnose_training_task= "diagnose_training"
+    diagnose_training_template = (diagnose_training_role,diagnose_training_task)
 
-    # 3. Code Generation Settings ###############################################################
+    strategist_role = "strategist"
+    strategist_task = "strategist"
+    strategist_template = (strategist_role,strategist_task)
+
+    director_role = ""
+    director_task = ""
+    director_template = (director_role,director_task)
+
+    dispatcher_role = "formatter_v02"
+    dispatcher_task = "format_v03"
+    dispatcher_template = (dispatcher_role, dispatcher_task)
+
+    dispatcher_fix_role = "formatter_v02"
+    dispatcher_fix_task = "format_fix"
+    dispatcher_fix_template = (dispatcher_fix_role, dispatcher_fix_task)
+
+    code_zero_role = "coder_v03"
+    code_zero_task = "initial_shaping_v03"
+    code_zero_template = (code_zero_role, code_zero_task)
+
+    code_gen_role = "coder_v03"
+    code_gen_task = "implement_plan_v02"
+    code_gen_template = (code_gen_role, code_gen_task)
+
+    code_fix_role = "coder_v03"
+    code_fix_task = "fix_code"
+    code_fix_template = (code_fix_role, code_fix_task)
+
+    # 4. Code Generation Settings ###############################################################
     RETENTION_MEMORY = 3 # How many past iterations to remember in detail
+    # gpt_oss has 3 thinking levels : low, medium, high
+    gpt_think_level = "low"
     # For Phase 1: Researcher (Diagnosis)
     analyst_options={
         'num_ctx': 16384,      # M4 Max can handle this easily
@@ -29,91 +64,119 @@ class Config:
         'num_predict': 5000,
         'temperature': 0.2,  
     }
-    # For Phase 3: Coder (Implementation)
-    def get_coder_options(model_name: str):
+    def get_inference_options(model_name: str, role: str):
         """
-        Returns optimal inference parameters based on the specific model architecture.
+        Returns optimal inference parameters based on Model Architecture AND Cognitive Role.
+        Target Hardware: Mac Studio/Pro (36GB Unified Memory).
+        
+        Refactor Update:
+        - Splits logic into 'Thinking' (Reasoning) vs 'Standard' (Non-Thinking).
+        - Implements specific roles: Diagnostician, Strategist, Research Lead, Coder.
+        - Manages Context (KV Cache) to prevent OOM on 36GB RAM.
         """
         model_id = model_name.lower()
+        role = role.lower()
         
-        # =========================================================
-        # GROUP A: REASONING & THINKING MODELS
-        # Needs: High Temp (to think), High Output Limit (trace + code)
-        # =========================================================
-        # Keywords based on your provided list:
-        reasoning_keywords = [
-            "deepseek-r1", 
-            "openthinker", 
-            "qwen3:30b-a3b-thinking", 
-            "gpt-oss", 
-            "cogito"
-        ]
-        
-        if any(k in model_id for k in reasoning_keywords):
-            return {
-                # MEMORY: 24k fits comfortably in 36GB RAM with 32b weights
-                "num_ctx": 24576,        
-                
-                # OUTPUT: 8k allows ~6k tokens of "Thinking" + 2k code
-                "num_predict": 8192,     
-                
-                # CREATIVITY: 0.6 prevents "thought loops" common in low-temp reasoning
-                "temperature": 0.6,      
-                "top_p": 0.95,
-                
-                # STOPS: Standard + Thinking tags to prevent hallucinations
-                "stop": ["<|end_of_text|>", "<|user|>", "User:", "</think>"] 
-            }
-        
-        # =========================================================
-        # GROUP B: STANDARD CODERS & INSTRUCT MODELS
-        # Needs: Low Temp (precision), Moderate Output (code only)
-        # =========================================================
-        # Covers: granite-code, gemma3, qwen3-coder, exaone, nemotron, devstral, llama3.2-vision
+        # Detect Reasoning Models (DeepSeek-R1, OpenThinker, etc.)
+        is_reasoning = any(k in model_id for k in ["deepseek-r1", "thinking", "openthinker", "gpt-oss"])
+
+        # defaults
+        options = {
+            "num_ctx": 16384,     # Safe default
+            "num_predict": 4096,  # Standard output limit
+            "stop": ["<|end_of_text|>", "<|user|>", "User:", "Observation:"]
+        }
+
+        # ==============================================================================
+        # SCENARIO A: THINKING / REASONING MODELS (DeepSeek-R1, etc.)
+        # Strategy: Maintain Entropy (0.6+) to prevent Loop Collapse. No Repetition Penalty.
+        # ==============================================================================
+        if is_reasoning:
+            # GLOBAL REASONING DEFAULTS
+            options.update({
+                "repeat_penalty": 1.0,   # CRITICAL: Do not penalize repetition (breaks CoT loops)
+                "num_predict": 8192,     # High limit to allow for <think> blocks
+                "top_k": 40,             # Standard sampling window
+            })
+
+            if role == 'diagnostician':
+                # Goal: Deep trend analysis.
+                # We keep temp at 0.6 to allow reasoning flow, but restrict top_p slightly
+                # to keep the "conclusion" phase grounded.
+                options["temperature"] = 0.6
+                options["top_p"] = 0.95
+                options["num_ctx"] = 20480 
+
+            elif role == 'strategist':
+                # Goal: Structured Diversity.
+                # Needs higher entropy to generate novel hypotheses in the CoT.
+                options["temperature"] = 0.75 
+                options["top_p"] = 0.95
+                options["num_ctx"] = 24576   # Max safe context for 36GB Mac
+
+            elif role == 'research_lead':
+                # Goal: Disciplined causal comparison.
+                # Slightly lower temp to encourage convergence on the most logical path.
+                options["temperature"] = 0.6
+                options["top_p"] = 0.9
+                options["num_ctx"] = 24576
+
+            elif role == 'coder':
+                # Goal: Precise code synthesis.
+                # WARNING: Do not drop temp to 0.1 for R1 models or they stutter.
+                # We rely on the model's internal verification rather than sampling restrictions.
+                options["temperature"] = 0.6 
+                options["top_p"] = 0.9
+                options["num_predict"] = 10000 # Max output for heavy refactoring
+
+        # ==============================================================================
+        # SCENARIO B: STANDARD MODELS (Llama 3, Mistral, Command R)
+        # Strategy: "Cognitive Thermodynamics" - Use Temperature/Penalties as control levers.
+        # ==============================================================================
         else:
-            return {
-                # MEMORY: Standard 16k is sufficient for code-only tasks
-                "num_ctx": 16384,        
-                
-                # OUTPUT: 4k is plenty for just Python code (no thinking trace)
-                "num_predict": 4096,     
-                
-                # PRECISION: 0.1 forces the model to pick the most likely syntax
-                "temperature": 0.1,      
-                "top_p": 0.5,            # Focus on high-probability tokens
-                "repeat_penalty": 1.1,   # Slight penalty to reduce loops
-                
-                # STOPS: Standard instruction stops
-                #"stop": ["<|end_of_text|>", "<|eot_id|>", "User:", "<|file_separator|>"] 
-            }
-        
-    # gpt_oss has 3 thinking levels : low, medium, high
-    gpt_think_level = "low"
+            # GLOBAL STANDARD DEFAULTS
+            options.update({
+                "num_predict": 4096,
+            })
 
-    # 4. LLM Prompt Templates ###################################################################
-    analyst_role = "rl_researcher"
-    analyst_task = "diagnose_agent_v03"
-    analyst_template = (analyst_role, analyst_task)
- 
-    formatter_role = "formatter_v02"
-    formatter_task = "format_v03"
-    formatter_template = (formatter_role, formatter_task)
+            if role == 'diagnostician':
+                # Goal: Stable statistical interpretation. 
+                # Low temp, fixed seed recommended.
+                options["temperature"] = 0.2
+                options["top_p"] = 0.9
+                options["top_k"] = 40
+                options["repeat_penalty"] = 1.05
+                options["seed"] = 42  # Deterministic analysis
 
-    formatter_fix_role = "formatter_v02"
-    formatter_fix_task = "format_fix"
-    formatter_fix_template = (formatter_role, formatter_task)
+            elif role == 'strategist':
+                # Goal: Diverse, mechanistically distinct strategies.
+                # High temp + Presence Penalty to force new topic exploration.
+                options["temperature"] = 0.7
+                options["top_p"] = 0.95
+                options["top_k"] = 60
+                options["repeat_penalty"] = 1.1
+                options["presence_penalty"] = 0.2 # Forces topic shifting
+                options["num_ctx"] = 24576
 
-    code_zero_role = "coder_v03"
-    code_zero_task = "initial_shaping_v03"
-    code_zero_template = (code_zero_role, code_zero_task)
+            elif role == 'research_lead':
+                # Goal: Stable, rational selection.
+                # Balanced parameters.
+                options["temperature"] = 0.3
+                options["top_p"] = 0.9
+                options["top_k"] = 40
+                options["repeat_penalty"] = 1.05
+                options["seed"] = 42
 
-    code_gen_role = "coder_v03"
-    code_gen_task = "implement_plan_v02"
-    code_gen_template = (code_gen_role, code_gen_task)
+            elif role == 'coder':
+                # Goal: Deterministic translation.
+                # Greedy decoding (very low temp).
+                options["temperature"] = 0.1
+                options["top_p"] = 0.85
+                options["top_k"] = 30
+                options["repeat_penalty"] = 1.02 # Slight penalty to prevent line-duplication bugs
+                options["seed"] = 42
 
-    code_fix_role = "coder_v03"
-    code_fix_task = "fix_code"
-    code_fix_template = (code_fix_role, code_fix_task)
+        return options
 
     # 5. Network Credentials ################################################
     # Saved in .env, raw IPs never see github
