@@ -18,7 +18,32 @@ This project completely automates the Algorithmic Reward Design (ARD) cycle. It 
 
 * **High-Efficiency Local Execution:** Designed to run unsupervised on local hardware. A single 8B-parameter model rewrites physics and trains the agent in **under 8 minutes per iteration**.
 
+## System Architecture: The Decoupled Loop
 
+The pipeline is strictly divided into two domains: **Execution & Translation** (Linux Compute Node) and **Meta-Reasoning & Orchestration** (MacBook Pro + Local LLMs). By heavily decoupling these processes, the system prevents common LLM failure modes like syntax hallucination and context-window saturation.
+
+### Phase 1: Deterministic Translation (The Physics Engine)
+
+Raw Reinforcement Learning telemetry is practically unreadable for an LLM. Before the AI sees anything, a deterministic Python layer intercepts the PPO training logs (via Stable-Baselines3) and translates raw float values into scientifically grounded metrics:
+
+* **Critic Saturation Index (CSI):** Measures Value network divergence to detect noisy reward gradients.
+* **Trajectory Isomorphism:** Calculates cross-seed pairwise correlations to measure optimization landscape stability.
+* **Algorithmic Credit Assignment:** Uses dynamic proxy metrics (e.g., Euclidean Kinematic Stability vs. Spatial Proximity) to compute the Pearson correlation between individual mathematical reward terms and actual task success.
+
+### Phase 2: Multi-Agent Meta-Reasoning (The Brain)
+
+Instead of relying on a single prompt to design and code the reward, the pipeline uses a "Chain-of-Agents" routing protocol. Each agent has a single, highly restricted objective:
+
+1. **The Strategist:** Reads the translated physics report and generates 3 distinct, novel mathematical hypotheses to fix the reward topology.
+2. **The Organizer:** A strict syntax parser that sanitizes the Strategist's chaotic output into a pristine "Mathematical Contract" markdown schema.
+3. **The Research Lead:** The executive filter. It cross-references the proposals against historical failures, applies Occam's Razor, and selects the single most viable equation.
+4. **The Dispatcher:** Routes the Research Lead's decision, extracting the raw math into an XML `<CODER_PAYLOAD>` and the scientific hypotheses into an XML `<VALIDATOR_PAYLOAD>`.
+5. **The Coder:** Operates in a strict syntax-only sandbox. It translates the mathematical payload into production-ready Python for the Gymnasium environment wrapper without altering the logic.
+6. **The Validator (Post-Mortem):** Evaluates the *next* iteration's diagnostic report against the original hypothesis. It specifically hunts for **Goodhart's Law** exploits (e.g., an agent hovering to farm survival points instead of landing) and compresses the failure into an immutable lesson.
+
+### Phase 3: Evolutionary Memory
+
+The Validator's output is permanently written to the **Experiment Ledger**. In subsequent iterations, the Strategist and Research Lead must read this ledger, ensuring the system never repeats a failed hypothesis and learns continuously from its physical environment.
 
 
 ```mermaid
@@ -69,3 +94,4 @@ graph TD
     F -->|Imports| B
     L -->|Appends| E
 ```
+
