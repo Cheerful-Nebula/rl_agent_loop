@@ -57,9 +57,9 @@ graph TD
     end
 
     subgraph "Shared File System"
-        D[("Diagnostic Report")]:::file
-        E[("Experiment Ledger")]:::file
-        F[("reward_function_py")]:::file
+        D("Diagnostic Report"):::file
+        E("Experiment Ledger"):::file
+        F("reward_function_py"):::file
     end
 
     subgraph "Node 2: MacBook Pro M4 Max - Inference Orchestration"
