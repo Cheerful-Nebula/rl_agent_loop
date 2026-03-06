@@ -40,6 +40,7 @@ To prevent syntax collapse, reasoning is isolated from execution using 6 highly 
 
 
 ```mermaid
+%%{init: {"theme": "base"} }%%
 graph TD
     classDef linux fill:#2b2d42,stroke:#61afef,stroke-width:2px,color:#fff
     classDef mac fill:#fdf6e3,stroke:#e06c75,stroke-width:2px,color:#333
