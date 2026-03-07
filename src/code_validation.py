@@ -1,7 +1,6 @@
 import ast
 import numpy as np
-import importlib.util
-from typing import Tuple, Optional, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any
 
 class CodeValidator:
     def __init__(self, code: str):
@@ -10,7 +9,7 @@ class CodeValidator:
         self.error_message: Optional[str] = None
         
         # Security: Whitelist allowed libraries
-        self.ALLOWED_IMPORTS = {'math', 'numpy', 'np', 'gym', 'gymnasium'}
+        self.ALLOWED_IMPORTS = {'math', 'numpy', 'np', 'gym', 'gymnasium', 'typing'}
         self.FORBIDDEN_FUNCS = {'eval', 'exec', 'open', 'input', 'system', 'subprocess'}
         self.FORBIDDEN_MODULES = {'os', 'sys', 'shutil', 'requests', 'socket'}
 
@@ -19,211 +18,82 @@ class CodeValidator:
         except SyntaxError as e:
             self.error_message = f"Syntax Error: {e.msg} at line {e.lineno}, column {e.offset}"
 
-    # =========================================================================
-    # 1. STATIC ANALYSIS (Security & Syntax)
-    # =========================================================================
-    def validate_static(self) -> Tuple[bool, str]:
-        """Performs Static Analysis (Syntax + Security)."""
+    def validate(self) -> Tuple[bool, str]:
+        """
+        Main validation entry point. 
+        Returns (is_valid: bool, feedback_or_code: str)
+        """
+        # 1. Syntax Check
         if self.tree is None:
             return False, self.error_message
-
+        
+        # 2. Static Security Check
         checker = BlacklistChecker(self.FORBIDDEN_FUNCS, self.FORBIDDEN_MODULES, self.ALLOWED_IMPORTS)
         checker.visit(self.tree)
-        
         if checker.violations:
-            feedback = "Security Violation: " + ", ".join(checker.violations)
-            return False, feedback
-
-        return True, "Static checks passed."
-
-    # =========================================================================
-    # 2. RUNTIME ORCHESTRATION
-    # =========================================================================
-    def validate_runtime(self, strict_mode: bool = True) -> Tuple[bool, str]:
-        """
-        Orchestrates the validation pipeline:
-        1. Compile: Load code into a sandbox (Holodeck).
-        2. Integrity: Check for Crashes, NaNs, Infinities, and Type errors with new signature.
-        3. Logic: Check for Vanishing Gradients, Exploding Rewards, and Incentive Alignment.
-        Args:
-            strict_mode (bool): If False, skips the 'Logic Checks' (Vanishing Gradient/Incentives).
-        """
+            return False, "Security Violation: " + ", ".join(checker.violations)
+        
+        # 3. Execution & Signature Check
         try:
-            # A. Build the Sandbox
-            module = self._create_holodeck()
+            # Create a restricted execution environment
+            safe_globals = {
+                'np': np,
+                'numpy': np,
+                'math': __import__('math'),
+                '__builtins__': {k: v for k, v in __builtins__.items() if k not in self.FORBIDDEN_FUNCS}
+            }
+            local_namespace = {}
             
-            # B. Check Math Integrity (Computer Science Errors)
-            valid_math, msg_math = self._check_math_integrity(module)
-            if not valid_math:
-                return False, msg_math
-
-            # C. Check RL Logic (Reinforcement Learning Errors: Only run if strict_mode is True)
-            if strict_mode:
-                valid_logic, msg_logic = self._check_rl_logic(module)
-                if not valid_logic:
-                    return False, msg_logic
-            else:
-                self._check_rl_logic(module)
-
-            return True, "Passed all Runtime Safety and Logic checks."
-
-        except Exception as e:
-            return False, f"Runtime Compilation Error: {str(e)}"
-
-    # =========================================================================
-    # 3. HELPER METHODS (The "Holodeck" Logic)
-    # =========================================================================
-    def _create_holodeck(self):
-        """Creates a temporary, isolated module and executes the user code inside it."""
-        spec = importlib.util.spec_from_loader("temp_reward_check", loader=None)
-        module = importlib.util.module_from_spec(spec)
-        # Execute the LLM's code inside this new, empty module object
-        exec(self.code, module.__dict__)
-        
-        if not hasattr(module, 'calculate_reward'):
-            raise ValueError("Function 'calculate_reward' not found in generated code.")
+            # Execute the code to define the function in memory
+            exec(self.code, safe_globals, local_namespace)
             
-        return module
-
-    def _get_mock_data(self, scenario_type="standard") -> Tuple[List[float], Dict[str, Any]]:
-        """
-        Generates Mock Data for the new function signature.
-        
-        Signature requires:
-        1. observation (list): [x, y, vx, vy, ang, ang_v, leg1, leg2]
-        2. info (dict): {
-            "action_usage": int (0-3),
-            "prev_obs": list
-        }
-        """
-        # Default: Hovering at (0,0) with no velocity
-        # Obs: [x, y, vx, vy, ang, ang_v, leg1, leg2]
-        obs = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        
-        # Default Info containing the required keys guaranteed by the environment
-        info = {
-            "prev_obs": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  
-            "action_usage": 0 # FIXED: Now an integer 0-3, matching system prompts
-        }
-
-        if scenario_type == "hover_high":
-            # High up (y=1.0), stationary, legs up
-            obs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            info["prev_obs"] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        
-        elif scenario_type == "landing_pad":
-            # On ground (y=0.0), legs touching (1.0), gentle downward velocity (-0.05)
-            obs = [0.0, 0.0, 0.0, -0.05, 0.0, 0.0, 1.0, 1.0]
-            info["prev_obs"] = [0.0, 0.01, 0.0, -0.05, 0.0, 0.0, 1.0, 1.0]
+            if 'calculate_reward' not in local_namespace:
+                return False, "Function 'calculate_reward' not found. You must name the function exactly 'calculate_reward'."
             
-        elif scenario_type == "crash_fast":
-            # On ground (y=0.0), high downward velocity (-5.0), legs up
-            obs = [0.0, 0.0, 0.0, -5.0, 0.0, 0.0, 0.0, 0.0]
-            info["prev_obs"] = [0.0, 0.2, 0.0, -5.0, 0.0, 0.0, 0.0, 0.0]
+            calc_func = local_namespace['calculate_reward']
             
-        elif scenario_type == "fuel_heavy_usage":
-             # Same as hover, but firing main engine hard (Action 2)
-             obs = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-             info["prev_obs"] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-             info["action_usage"] = 2 
-
-        return obs, info
-
-    def _check_math_integrity(self, module) -> Tuple[bool, str]:
-        """
-        Phase 1: Integrity Check.
-        Tests for Runtime Crashes, NaNs, Infinities, and Return Types using new signature.
-        """
-        # Test Case 1: Division by Zero Risk (Zero State)
-        # We pass strictly zeros to check for 0/0 or log(0) errors on position/vel
-        zero_obs = [0.0] * 8
-        zero_info = {
-            "prev_obs": [0.0] * 8, 
-            "action_usage": 0 # FIXED: Integer
-        }
-        
-        # Test Case 2: Standard Values
-        std_obs, std_info = self._get_mock_data("hover_high")
-
-        test_cases = [
-            ("Zero-Input (Edge Case)", zero_obs, zero_info),
-            ("Standard-Input", std_obs, std_info)
-        ]
-
-        for name, obs, info in test_cases:
-            try:
-                reward = module.calculate_reward(obs, info)
-
-                # Check A: Return Type
-                if not isinstance(reward, (float, np.floating, int, np.integer)):
-                    return False, f"Type Error: Function returned {type(reward)}, expected float."
-
-                # Check B: Math Integrity
-                if np.isnan(reward):
-                    return False, f"Math Error: Reward is NaN in {name}. Check for 0/0 or log(-1)."
+            # Create Dummy Inputs matching LunarLander-v3 dimensions
+            dummy_obs = np.zeros(8, dtype=np.float32)
+            dummy_info = {
+                'prev_obs': np.zeros(8, dtype=np.float32),
+                'action': 0,
+                'current_step': 10
+            }
+            
+            # Test Execution
+            result = calc_func(dummy_obs, dummy_info)
+            
+            # Strict Signature Validation
+            if not isinstance(result, tuple) or len(result) != 2:
+                return False, f"Function must return a Tuple of length 2 (total_reward, components_dict), got {type(result)}."
+            
+            total_reward, components = result
+            
+            # Check the Total Reward type (allow standard python floats or numpy floats)
+            if not isinstance(total_reward, (float, int, np.floating, np.integer)):
+                return False, f"First return value must be a numeric float, got {type(total_reward)}."
+            
+            # Check the Components Dictionary type
+            if not isinstance(components, dict):
+                return False, f"Second return value must be a dictionary, got {type(components)}."
+            if len(components) == 0:
+                return False, "The components dictionary is empty. It must contain the granular mathematical terms."
                 
-                if np.isinf(reward):
-                    return False, f"Math Error: Reward is Infinite in {name}. Check for division by zero."
-
-            except KeyError as e:
-                return False, f"Key Error in {name}: You accessed a key that doesn't exist: {e}. Check docstring constraints."
-            except IndexError as e:
-                return False, f"Index Error in {name}: Accessed invalid index in observation list: {e}."
-            except TypeError as e:
-                # NEW: Explicit handling for the 'dict' vs 'int' confusion
-                return False, f"Type Error in {name}: {str(e)}. (Check if you are treating 'info' keys as wrong types, e.g. 'action_usage' is an int)."
-            except NameError as e:
-                return False, f"Name Error in {name}: {str(e)}. (Did you forget to import a module like 'math' or 'numpy'?)"
-            except Exception as e:
-                return False, f"Crash in {name}: {str(e)}"
-
-        return True, ""
-
-    def _check_rl_logic(self, module) -> Tuple[bool, str]:
-        """
-        Phase 2: Logic Check.
-        Tests for Vanishing Gradients, Exploding Gradients, and Inverse Rewards.
-        """
-        scenarios = ["hover_high", "landing_pad", "crash_fast"]
-        results = {}
-
-        # 1. Collect Rewards
-        for name in scenarios:
-            obs, info = self._get_mock_data(name)
-            try:
-                reward = module.calculate_reward(obs, info)
-                results[name] = float(reward)
-            except Exception as e:
-                return False, f"Logic Check Failed: Crash in scenario '{name}' ({str(e)})"
-
-        # 2. Check: Exploding Gradients (Normalization)
-        # for name, r in results.items():
-        #    if abs(r) > 20.0: # Loose bound
-        #        return False, f"Scaling Error: Reward in '{name}' is {r:.2f}. Exploding Gradient Risk. Normalize to approx -1.0 to 1.0."
-
-        # 3. Check: Vanishing Gradient (Incentive to Land)
-        # Landing (y=0) must be better than Hovering (y=1)
-        if results["landing_pad"] <= results["hover_high"]:
-            return False, (
-                f"Logic Error (Vanishing Gradient): Landing ({results['landing_pad']:.3f}) "
-                f"is not better than Hovering ({results['hover_high']:.3f}). "
-                "The agent has no incentive to go down."
-            )
-
-        # 4. Check: Safety (Incentive not to Crash)
-        # Soft landing (-0.05 vel) must be better than hard crash (-5.0 vel)
-        if results["landing_pad"] <= results["crash_fast"]:
-             return False, (
-                f"Safety Error: Crashing ({results['crash_fast']:.3f}) "
-                f"is rewarded better/equal to Landing ({results['landing_pad']:.3f}). "
-                "Penalize velocity more."
-            )
-
-        return True, ""
-
+            for k, v in components.items():
+                if not isinstance(k, str):
+                    return False, f"Component dict keys must be strings, got {type(k)} for key {k}."
+                if not isinstance(v, (float, int, np.floating, np.integer)):
+                    return False, f"Component dict values must be numeric, got {type(v)} for key '{k}'."
+                    
+        except Exception as e:
+            # Catch mathematical errors (e.g., dividing by zero), undefined variables, or attribute errors
+            return False, f"Runtime Execution Error: {type(e).__name__}: {str(e)}"
+            
+        # If it passes syntax, security, execution, and signature checking, it is safe to write to disk.
+        return True, self.code
 
 # =========================================================================
-# 4. AST UTILITIES
+# AST UTILITIES
 # =========================================================================
 class BlacklistChecker(ast.NodeVisitor):
     def __init__(self, forbidden_funcs, forbidden_modules, allowed_imports):

@@ -1,11 +1,9 @@
 # This allows: from prompts import build_diagnosis_prompt
-from .builders import build_training_diagnosis_prompt
-from .builders import build_performance_diagnosis_prompt
-from .builders import build_coding_prompt
-from .builders import build_fix_prompt
-from .builders import build_initial_shaping_prompt
-from .builders import build_formatter_prompt
-from .builders import build_formatter_fix_prompt
+from .builders import build_strategist_prompt
+from .builders import build_organizer_prompt
+from .builders import build_lead_prompt
+from .builders import build_dispatcher_prompt
+from .builders import build_coder_prompt
 from .builders import build_validator_prompt
 
 # This allows: from prompts import load_template (if needed)

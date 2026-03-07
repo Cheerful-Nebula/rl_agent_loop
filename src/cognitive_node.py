@@ -25,7 +25,6 @@ class CognitiveNode:
         self.json_path = self.ws.get_path("cognition_json", iteration, "cognition_record.json")
         
         # 2. CSV Telemetry (Stats/Metrics)
-        # We use .get() to be safe if the container key is missing
         self.csv_container = self.ws.containers.get("cognition_csv", None)
         
         # 3. Markdown Report Buffer (Human readable summary)
@@ -98,7 +97,18 @@ class CognitiveNode:
     def save_report(self):
         """Flushes the internal markdown buffer to the workspace file."""
         if self.markdown_buffer:
-            utils.save_cognition_markdown(self.ws, self.iteration, self.markdown_buffer)
+            # Save the plan for human review
+            plan_path = self.ws.get_path("cognition_markdown", self.iteration, "cognition_record.md")
+            final_content = f"# Cognition prompts and calls: Iteration:{self.iteration}\n\n"
+            for filename, prompt_obj in self.markdown_buffer:
+                final_content += "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
+                final_content += f"# {filename}"
+                final_content += f"\n"+ "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
+                final_content += prompt_obj + f"\n\n"
+
+            with open(plan_path, "w") as f:
+                f.write(final_content)
+            print(f"📝 Plan saved to {plan_path}") 
 
     def _robust_api_call(self, system_prompt: str, user_prompt: str, options: Dict,model_override: Optional[str] = None) -> Optional[Any]:
         """Internal loop handling retries, timeouts, and empty responses."""
@@ -119,7 +129,7 @@ class CognitiveNode:
                 # Validation: Check for empty content
                 if not response or 'message' not in response or not response['message']['content'].strip():
                     print(f"   ⚠️ Attempt {attempt}: Received empty response from {active_model}. Retrying...")
-                    time.sleep(1)
+                    time.sleep(2**(attempt-1))
                     continue
                     
                 return response
@@ -167,6 +177,9 @@ class CognitiveNode:
         # We append the prompts AND the result for context
         self.markdown_buffer.append((f"Phase: {phase_name} [System] {active_model}", system_prompt))
         self.markdown_buffer.append((f"Phase: {phase_name} [User] {active_model}", user_prompt))
-        if response.message.thinking is not None and response.message.thinking != "":
-            self.markdown_buffer.append((f"Phase: {phase_name} [Thinking Trace] {active_model}", response.message.thinking ))
+        # Safely extract thinking trace (defaults to empty string if missing)
+        thinking_trace = response.get('message', {}).get('thinking', "")
+        if thinking_trace:
+            self.markdown_buffer.append((f"Phase: {phase_name} [Thinking Trace] {active_model}", thinking_trace))
+            
         self.markdown_buffer.append((f"Phase: {phase_name} [Output] {active_model}", log_content_for_md))

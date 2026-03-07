@@ -11,6 +11,7 @@ import sys
 import numpy as np
 from pathlib import Path
 from datetime import datetime
+import gymnasium as gym
 from stable_baselines3.common.monitor import Monitor
 from typing import Tuple
 import pandas as pd
@@ -39,6 +40,7 @@ def extract_python_code(llm_response):
     match = re.search(r'```(.*?)```', llm_response, re.DOTALL)
     if match: return match.group(1).strip()
     return llm_response
+
 def extract_json(llm_response):
     """
     Robustly extracts JSON from an LLM response, handling markdown fences and stray text.
@@ -79,70 +81,6 @@ def load_dynamic_module(module_name, file_path):
         return module
     raise ImportError(f"Could not load module {module_name} from {file_path}")
 
-def save_cognition_markdown(ws: ExperimentWorkspace,iteration, cognition_list:list[Tuple]):
-        # Save the plan for human review
-        plan_path = ws.get_path("cognition_markdown", iteration, "cognition_record.md")
-        final_content = f"# Cognition prompts and calls: Iteration:{iteration}\n\n"
-        for filename, prompt_obj in cognition_list:
-            final_content += "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
-            final_content += f"# {filename}"
-            final_content += f"\n"+ "*"*25 +f"\n"+ "*"*25 +f"\n" + "*"*25 +f"\n"
-            final_content += prompt_obj + f"\n\n"
-
-        with open(plan_path, "w") as f:
-            f.write(final_content)
-        print(f"📝 Plan saved to {plan_path}") 
-
-def convert_formatter_json_to_markdown(data: dict) -> str:
-    """
-    Converts the structured Formatter JSON into a clean, human-readable Markdown report.
-    Works for schema class: FormatterOutput(BaseModel)
-    """
-    md_lines = []
-    
-    # 1. ANALYSIS (The "Why")
-    if "analysis" in data and data["analysis"]:
-        md_lines.append("## 🔬 Analysis")
-        md_lines.append(data["analysis"])
-        md_lines.append("")
-
-    # 2. PLAN (The "How" - This goes to the Coder)
-    if "plan" in data and data["plan"]:
-        md_lines.append("## 🛠️ Refinement Plan")
-        md_lines.append(data["plan"])
-        md_lines.append("")
-
-    # 3. LESSON (The Long-term Memory)
-    if "lesson" in data and data["lesson"]:
-        md_lines.append("## 🧠 Immutable Lesson")
-        md_lines.append(f"> {data['lesson']}")
-        md_lines.append("")
-        
-    if "hypothesis" in data and data["hypothesis"]:
-        md_lines.append("## 🧠 Hypothesis")
-        md_lines.append(f"> {data['hypothesis']}")
-        md_lines.append("")
-
-    # 4. HYPERPARAMETERS (The Future Config Updates)
-    if "hyperparameters" in data and data["hyperparameters"]:
-        md_lines.append("## ⚙️ Hyperparameter Recommendations")
-        # Handle if it's a string (raw text) or dict
-        if isinstance(data["hyperparameters"], dict):
-            for k, v in data["hyperparameters"].items():
-                md_lines.append(f"- **{k}**: {v}")
-        else:
-            md_lines.append(str(data["hyperparameters"]))
-        md_lines.append("")
-
-    markdown_str = "\n".join(md_lines)
-
-    fallback = []
-    for key , value in data.items():
-        fallback.append(str(key))
-        fallback.append(str(value))
-        fallback.append("")
-
-    return markdown_str if not markdown_str.strip() else "\n".join(fallback) 
 
 def plan_json_to_markdown(plan_json: str) -> str:
     """
@@ -270,87 +208,44 @@ def plan_json_to_markdown(plan_json: str) -> str:
 # ENVIRONMENTS
 # ---------------------------------------------------------
 def make_env(reward_code_path:str | None = None):
-    import gymnasium as gym
     env = gym.make(Config.ENV_ID)
     env = DynamicRewardWrapper(env, reward_code_path=reward_code_path) 
     return Monitor(env)
 # ---------------------------------------------------------
 # SCIENTIFIC LOGGING & ANALYSIS
 # ---------------------------------------------------------
-def summarize_training_log_old(ws: ExperimentWorkspace, iteration: int)-> json:
-   log_path =  ws.dirs["telemetry_training"] / f"progress_{iteration:02d}.csv"
-   df = pd.read_csv(log_path)
-   training_summary= {
-    "policy_gradient_loss": {"start": df['train/policy_gradient_loss'].iloc[1].round(4),
-                             "median": df['train/policy_gradient_loss'].median().round(4),
-                             "mean": df['train/policy_gradient_loss'].mean().round(4),
-                             "end": df['train/policy_gradient_loss'].iloc[-1].round(4)},
-    "approx_kl": {"start": df['train/approx_kl'].iloc[1].round(4),
-                  "median": df['train/approx_kl'].median().round(4),
-                  "mean": df['train/approx_kl'].mean().round(4),
-                  "end": df['train/approx_kl'].iloc[-1].round(4)},
-    "loss": {"start": df['train/loss'].iloc[1].round(4),
-             "median": df['train/loss'].median().round(4),
-             "mean": df['train/loss'].mean().round(4),
-             "end": df['train/loss'].iloc[-1].round(4)},
-    "explained_variance": {"start": df['train/explained_variance'].iloc[1].round(4),
-                           "median": df['train/explained_variance'].median().round(4),
-                           "mean": df['train/explained_variance'].mean().round(4),
-                           "end": df['train/explained_variance'].iloc[-1].round(4)},
-    "clip_range": {"start": df['train/clip_range'].iloc[1].round(4),
-                   "median": df['train/clip_range'].median().round(4),
-                   "mean": df['train/clip_range'].mean().round(4),
-                   "end": df['train/clip_range'].iloc[-1].round(4)},    
-    "entropy_loss": {"start": df['train/entropy_loss'].iloc[1].round(4),
-                     "median": df['train/entropy_loss'].median().round(4),
-                     "mean": df['train/entropy_loss'].mean().round(4),
-                     "end": df['train/entropy_loss'].iloc[-1].round(4)},
-    "value_loss": {"start": df['train/value_loss'].iloc[1].round(4),
-                   "median": df['train/value_loss'].median().round(4),
-                   "mean": df['train/value_loss'].mean().round(4),
-                   "end": df['train/value_loss'].iloc[-1].round(4)},
-    "clip_fraction": {"start": df['train/clip_fraction'].iloc[1].round(4),
-                      "median": df['train/clip_fraction'].median().round(4),
-                      "mean": df['train/clip_fraction'].mean().round(4),
-                      "end": df['train/clip_fraction'].iloc[-1].round(4)},
-    "learning_rate": {"start": df['train/learning_rate'].iloc[1],
-                      "median": df['train/learning_rate'].median().round(4),
-                      "mean": df['train/learning_rate'].mean().round(4),
-                      "end": df['train/learning_rate'].iloc[-1]},
-    "n_updates": {"total": df['train/n_updates'].iloc[-1]}
-    }
 
-   #training_summary_json = json.dumps(training_summary_json, indent=4)
-
-   return training_summary
 # ==============================================================================
 # Testing new summarizing training log functions
 # ==============================================================================
 
 
 def compute_trend_consistency(values: np.ndarray) -> str:
-    """Characterize trend pattern without absolute thresholds."""
+    """Characterize trend pattern with semantic tags."""
     if len(values) < 3:
         return "insufficient_data"
     
     diffs = np.diff(values)
     
-    # Check for monotonicity
+    # Check for strict monotonicity
     if np.all(diffs >= 0):
-        return "monotonic_increasing"
+        return "monotonic_increasing"        
     elif np.all(diffs <= 0):
-        return "monotonic_decreasing"
+        return "monotonic_decreasing"       
     
-    # Check for high volatility
+    # Check for volatility
     sign_changes = np.sum(np.diff(np.sign(diffs)) != 0)
     volatility_ratio = sign_changes / len(diffs)
-    
+    net_sign_change = np.sum(np.sign(diffs))
+
     if volatility_ratio > 0.4:
         return "noisy"
     elif volatility_ratio > 0.2:
         return "oscillating"
+    elif net_sign_change > 0: 
+        return "mostly_monotonic_increasing"        
     else:
-        return "mostly_monotonic"
+        return "mostly_monotonic_decreasing"    
 
 
 #def summarize_training_log(ws: ExperimentWorkspace, iteration: int):
@@ -718,7 +613,7 @@ def linear_schedule(initial_value: float, final_value: float):
         Progress will decrease from 1 (beginning) to 0 (end).
         """
         lr = final_value + (initial_value - final_value) * progress_remaining
-        print(f"Progress: {progress_remaining:.3f} → LR: {lr:.6f}")
+        #print(f"Progress: {progress_remaining:.3f} → LR: {lr:.6f}")
         return lr
 
     return func
@@ -726,68 +621,6 @@ def linear_schedule(initial_value: float, final_value: float):
 # Usage: Decay from 0.001 to 0.0001
 # set when initializing the RL model:
 # lr_schedule = linear_schedule(1e-3, 1e-4)
-# ---------------------------------------------------------
-# MEMORY FUNCTIONS (Now Workspace-Aware)
-# ---------------------------------------------------------
-def get_recent_history(workspace, current_iteration, n=20):
-    """
-    Retrieves the 'Implementation Plan' from the previous N iterations.
-    Uses the workspace to find the files in the correct Iter_XX folders.
-    """
-    history_text = ""
-    start_idx = max(1, current_iteration - n)
-    
-    for i in range(start_idx, current_iteration):
-        # Construct path: experiments/.../Iter_XX/cognition/plan.md
-        try:
-            plan_path = workspace.get_path("cognition_lessons", i, "lesson.md")
-            if os.path.exists(plan_path):
-                content = load_file(plan_path)
-                # Just take the whole plan, or split if your prompt format is strict
-                history_text += f"\n--- HISTORY ENTRY (Iter {i}) ---\n{content}\n"
-        except Exception as e:
-            continue
-            
-    return history_text if history_text else "No previous history."
-
-def get_long_term_memory(workspace, current_iteration, model_name, retention=3):
-    """
-    Summarizes iterations older than 'retention'.
-    """
-    cutoff = current_iteration - retention
-    if cutoff < 1:
-        return "No long-term history yet."
-    
-    older_plans = []
-    
-    # Iterate from 1 up to the cutoff
-    for i in range(1, cutoff):
-        try:
-            plan_path = workspace.get_path("cognition", i, "plan.md")
-            if os.path.exists(plan_path):
-                content = load_file(plan_path)
-                older_plans.append(f"(Iter {i}): {content[:200]}...")
-        except:
-            continue
-
-    if not older_plans: 
-        return "No older history to summarize."
-
-    # Combine for the LLM
-    combined_text = "\n".join(older_plans)
-    
-    summary_prompt = f"""
-    You are an AI Researcher. Here are summaries of your earliest experiments (Iter 1 to {cutoff}):
-    {combined_text}
-    
-    TASK: Summarize these into 3-5 'Immutable Lessons'. What failed? What worked?
-    """
-    try:
-        response = ollama.chat(model=model_name, messages=[{'role': 'user', 'content': summary_prompt}])
-        return response['message']['content']
-    except:
-        return "Could not generate summary."
-
 
 # ---------------------------------------------------------
 # HARDWARE
@@ -810,13 +643,13 @@ def get_optimized_ppo_params(n_envs, device_type="auto"):
 
 def get_hardware_config():
     system = platform.system()
-    if system == "Linux": return 32, "cuda"
-    elif system == "Darwin": return 8, "mps"
+    if system == "Linux": return 32, "cpu" #"cuda"
+    elif system == "Darwin": return 8, "cpu" #"mps"
     return 4, "cpu"
 
 # -----------------------------------------------------------
-# Converting evaluations metrics dictionary to markdown table
-# Hoping for improved comprehensision of LLM's analysis
+# Translation Layer
+# Functions Focused on translating information into LLM-friendly formatting/wording
 # ------------------------------------------------------------
 def performance_telemetry_as_table(stats_list: list[dict]) -> str:
     """
@@ -923,3 +756,31 @@ def training_telemetry_as_table(stats_list: list[dict]) -> str:
         table.append("| " + " | ".join(row) + " |")
 
     return "\n".join(table)
+
+# --- 2. The Spatial Context Translator ---
+def tag_spatial_approach(trend_string: str) -> str:
+    """Translates generic math trends into physical spatial semantics."""
+    mapping = {
+        "monotonic_increasing": "fleeing_target",
+        "mostly_monotonic_increasing": "mostly_fleeing",
+        "monotonic_decreasing": "direct_approach",
+        "mostly_monotonic_decreasing": "mostly_approaching",
+        "oscillating": "oscillating_around_target",
+        "noisy": "noisy_thrashing",
+        "insufficient_data": "insufficient_data"
+    }
+    return mapping.get(trend_string, "unknown_pattern")
+
+# --- 3. The Learning Curve Context Translator ---
+def tag_learning_curve(trend_string: str) -> str:
+    """Translates generic math trends into RL training semantics."""
+    mapping = {
+        "monotonic_increasing": "consistent_improvement",
+        "mostly_monotonic_increasing": "gradual_improvement",
+        "monotonic_decreasing": "catastrophic_forgetting",
+        "mostly_monotonic_decreasing": "performance_degradation",
+        "oscillating": "unstable_learning",
+        "noisy": "random_noise",
+        "insufficient_data": "insufficient_data"
+    }
+    return mapping.get(trend_string, "unknown_pattern")

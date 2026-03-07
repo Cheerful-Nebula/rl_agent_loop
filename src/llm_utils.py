@@ -134,16 +134,13 @@ def extract_chat_metrics(
     role = message.get("role")
     tool_calls = message.get("tool_calls") or []
 
-    # Thinking-capable models expose a "thinking" field on the message. [web:96][web:99]
+    # Thinking-capable models expose a "thinking" field on the message. 
     thinking = message.get("thinking")
     has_thinking = thinking is not None and thinking != ""
 
     # Short previews for CSV readability.
     prompt_preview = None
-    # In your loop, the "user task" prompt is what you pass as the user message.
-    # Here we only see the *response* message; prompt preview comes from caller if needed.
-    # For now, we treat "content" as response_preview and leave prompt_preview to be
-    # supplied as an extra column from the caller (or derive from cognition JSON later).
+ 
     response_preview = content[:response_preview_len] if content else None
     thinking_preview = thinking[:prompt_preview_len] if isinstance(thinking, str) else None
 
@@ -174,7 +171,7 @@ def extract_chat_metrics(
         "has_thinking": has_thinking,
         "thinking_preview": thinking_preview,
 
-        # Options actually used (temperature, top_p, etc.) [web:117][web:53]
+        # Options actually used (temperature, top_p, etc.)
         "opt_temperature": options.get("temperature"),
         "opt_top_p": options.get("top_p"),
         "opt_top_k": options.get("top_k"),

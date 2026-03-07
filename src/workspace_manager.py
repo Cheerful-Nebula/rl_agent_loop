@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 class ExperimentWorkspace:
-    def __init__(self, base_dir="experiments"):
+    def __init__(self, iteration:int,base_dir="experiments"):
         """
         Initializes the workspace by detecting the Campaign and Model 
         from Environment Variables set by outer_loop.sh.
@@ -40,16 +40,13 @@ class ExperimentWorkspace:
             "cognition": self.model_root_path / "cognition",
             "cognition_json": self.model_root_path / "cognition"/ "json_cognition_records",
             "cognition_markdown": self.model_root_path / "cognition"/ "markdown_cognition_records",
-            "cognition_lessons": self.model_root_path / "cognition"/ "lessons",
             "code": self.model_root_path / "generated_code",
             "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
-            "tensorboard": self.model_root_path / "telemetry" / "tensorboard",
-            "telemetry": self.model_root_path / "telemetry",
-            "telemetry_raw": self.model_root_path / "telemetry"/ "raw",
-            "telemetry_training": self.model_root_path / "telemetry" / "training",
-            "plots": self.model_root_path / "artifacts" / "plots",
-            "models": self.model_root_path / "artifacts" / "models",
-            "videos": self.model_root_path / "artifacts" / "videos"
+            "telemetry_iteration": self.model_root_path / "telemetry" / f"iteration{iteration:02d}",
+            "telemetry_payloads": self.model_root_path / "telemetry"/ "metric_payloads",
+            "plots": self.model_root_path / "artifacts" / f"iteration{iteration:02d}"/ "plots",
+            "models": self.model_root_path / "artifacts" / f"iteration{iteration:02d}" / "models",
+            "videos": self.model_root_path / "artifacts" / f"iteration{iteration:02d}"/ "videos"
         }
 
         # 5. BUILD IT
@@ -112,7 +109,7 @@ class ExperimentWorkspace:
         Loads the JSON containing metrics from a specific iteration.
         Returns a Python Dictionary Object
         """
-        filepath = self.get_path("telemetry_raw", iteration, "metrics.json")
+        filepath = self.get_path("telemetry_payloads", iteration, "metric_payload.json")
         if not filepath.exists():
             return None
         

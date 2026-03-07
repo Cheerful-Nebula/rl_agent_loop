@@ -15,40 +15,52 @@ class Config:
     CAMPAIGN_TAG = os.getenv("CAMPAIGN_TAG", "Debug_Run")
     
     # 3. LLM Prompt Templates ###################################################################
-    diagnose_training_role= "diagnose_training2"
-    diagnose_training_task= "diagnose_training"
-    diagnose_training_template = (diagnose_training_role,diagnose_training_task)
+    initial_role = "initial_system_prompt"
+    initial_task = "initial_user_prompt"
+    initial_template = (initial_role,initial_task)
 
-    strategist_role = "strategist"
-    strategist_task = "strategist"
+    strategist_role = "strategist_system_prompt"
+    strategist_task = "strategist_system_prompt"
     strategist_template = (strategist_role,strategist_task)
 
-    director_role = ""
-    director_task = ""
-    director_template = (director_role,director_task)
+    organizer_role = "organizer_system_prompt"
+    organizer_task = "organizer_system_prompt"
+    organizer_template = (organizer_role,organizer_task)
 
-    dispatcher_role = "formatter_v02"
-    dispatcher_task = "format_v03"
-    dispatcher_template = (dispatcher_role, dispatcher_task)
+    lead_role = "lead_system_prompt"
+    lead_task = "lead_system_prompt"
+    lead_template = (lead_role,lead_task)
 
-    dispatcher_fix_role = "formatter_v02"
-    dispatcher_fix_task = "format_fix"
-    dispatcher_fix_template = (dispatcher_fix_role, dispatcher_fix_task)
+    dispatcher_role = "dispatcher_system_prompt"
+    dispatcher_task = "dispatcher_system_prompt"
+    dispatcher_template = (dispatcher_role,dispatcher_task)
 
-    code_zero_role = "coder_v03"
-    code_zero_task = "initial_shaping_v03"
-    code_zero_template = (code_zero_role, code_zero_task)
+    coder_role = "coder_system_prompt"
+    coder_task = "coder_system_prompt"
+    coder_template = (coder_role,coder_task)
 
-    code_gen_role = "coder_v03"
-    code_gen_task = "implement_plan_v02"
-    code_gen_template = (code_gen_role, code_gen_task)
+    validator_role = "validator_system_prompt"
+    validator_task = "validator_system_prompt"
+    validator_template = (validator_role,validator_task)
 
-    code_fix_role = "coder_v03"
-    code_fix_task = "fix_code"
-    code_fix_template = (code_fix_role, code_fix_task)
 
     # 4. Code Generation Settings ###############################################################
-    RETENTION_MEMORY = 3 # How many past iterations to remember in detail
+    # Standard/Non-thinking Models Options
+    standard_options={                       
+        "temperature": 0.85,       
+        "repeat_penalty": 1.1,     
+        "num_predict": 8192,
+        "num_ctx": 16384
+    }
+
+    # Thinking- Model Options
+    think_options={
+        "temperature": 0.7,        
+        "top_p": 0.95,             
+        "repeat_penalty": 1.0,     
+        "num_predict": 8192,       
+        "num_ctx": 16384
+        }
     # gpt_oss has 3 thinking levels : low, medium, high
     gpt_think_level = "low"
     # For Phase 1: Researcher (Diagnosis)

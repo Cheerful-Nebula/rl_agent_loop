@@ -3,22 +3,26 @@
 venv/
 __pycache__/
 *.pyc
-
+# below venv utilized pygame-ce instead of pygame, more actively managed
+venv_test/
+stable_requirements_backup.txt
 # Ignore output logs and models (they are too big)
 experiments/
 misc/
 logs/
 models/
 plots/
+
 *.json
-# This script is overwritten by the LLMs everytime so changes every run
-reward_shaping.py 
+
 # Unit tests/ experimental or temp scripts
-unit_tests/successful_run_test.py
 *_experimental.py
 *_experimental.sh
 *joke*
 *_old.py
+testing_*.ipynb
+testing_*.py
+testing_suite/
 inspect_model.py
 sandbox.ipynb
 

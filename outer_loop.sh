@@ -5,7 +5,7 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 # Define the contenders
-MODELS=("gemma3:27b" "nemotron-3-nano:30b" "deepseek-r1:32b") # "deepseek-r1:32b" "openthinker:32b"
+MODELS=("deepseek-r1:8b") # "deepseek-r1:32b" "openthinker:32b"
 # Capture arguments
 ITERATIONS=${1:-5}     # required-ish: default 5
 TIMESTEPS=${2:-50000}  # required-ish: default 50000
@@ -49,7 +49,7 @@ if [[ "$TAG" == *"remote"* ]]; then
 else
     echo "💻 ENGINE: Local Training"
     # This script runs the PPO math locally
-    TRAINING_SCRIPT="train.py"
+    TRAINING_SCRIPT="src/train_local.py"
 fi
 
 # Format steps for directory naming (e.g. 500000 -> 500k, 1200000 -> 1.2M)

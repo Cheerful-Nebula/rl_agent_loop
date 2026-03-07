@@ -24,7 +24,7 @@ def run_agentic_improvement(iteration):
     start_time = time.perf_counter()
     
     # 1. Initialize Workspace, Brain, and Memory
-    ws = ExperimentWorkspace()
+    ws = ExperimentWorkspace(iteration)
     brain = CognitiveNode(iteration=iteration, workspace=ws, model=MODEL_NAME)
     brain_memory = ExperimentLedger(ws.model_root_path) # Initialize Experiment Ledger
     
@@ -105,10 +105,7 @@ def run_agentic_improvement(iteration):
     else:
         long_term_memory = "1st Iteration, No Previous History"
 
-    # Build Prompt using our Prompt Builder
-    # Note: metrics_json is modified in-place by build_diagnosis_prompt, so we pass a copy if needed
-    # but here it's fine. utils.performance_telemetry_as_table inside the builder handles the 
-    # filtering to "Stochastic/Shaped" and "Deterministic/Base".
+    # Build Prompt using Prompt Builder
     diag_role, diag_task = prompts.build_diagnosis_prompt(
         Config.analyst_template,
         metrics_json=metrics, 

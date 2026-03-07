@@ -7,7 +7,8 @@ MAX_LOOPS=${1:-10}
 # 2. Capture the controller script name (default to standard.py)
 CONTROLLER_SCRIPT=${2:-"controllers/standard.py"}
 # 3. Capture the training script name (default to train.py)
-TRAINING_SCRIPT=${3:-"train.py"}
+TRAINING_SCRIPT=${3:-"src/train_local.py"}
+NUM_SEEDS=3
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -21,9 +22,9 @@ do
     echo -e "      ITERATION $i / $MAX_LOOPS"
     echo -e "==========================================${NC}"
 
-    # 1. Train the Agent
-    echo -e "${GREEN}[Step 1] Training Agent (Iteration $i) ${NC}"
-    python3 "$TRAINING_SCRIPT" --iteration "$i"
+    # 1. Train the Agents
+    echo -e "${GREEN}[Step 1] Training Agents & Aggregation (Iteration $i) ${NC}"
+    python3 "$TRAINING_SCRIPT" --iteration "$i" --num_seeds "$NUM_SEEDS"
 
     # 2. Improve the Code
     echo -e "${GREEN}[Step 2] Designing New Reward Function (Iteration $i) ${NC}"

@@ -6,127 +6,191 @@ import os
 import csv
 import json
 import numpy as np
+import pandas as pd
+from typing import List, Dict, Any
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.evaluation import evaluate_policy
 
-
+# custom imports
 from src.workspace_manager import ExperimentWorkspace
 
 
 # ==========================================
-# 1. The Supervisor Translator (Quartiles)
+#  Training Collector
 # ==========================================
-class AgenticObservationTracker(BaseCallback):
+class MultiEnvEpisodeTracker(BaseCallback):
     """
-    Feeds the LLM Supervisor. 
-    Translates raw data into statistical distributions (quartiles, mean, variance).
+    Harvests lightweight semantic training statistics and component values.
+    Optimized for LLM context windows by dropping raw 8D vectors.
     """
-    def __init__(self, obs_indices: list, save_path: str, verbose=0):
-        super(AgenticObservationTracker, self).__init__(verbose)
-        self.obs_indices = obs_indices
-        self.save_path = save_path
-        self.episode_data = {i: [] for i in obs_indices}
-        self.outcomes = {"trunc": 0, "term": 0}
-        self.rollout_stats = [] 
-
+    
+    def __init__(self, ws: ExperimentWorkspace, iteration: int, seed_id:int, max_buffer_size: int = 10000):
+        super().__init__()
+        self.ws = ws
+        self.iteration = iteration
+        self.max_buffer_size = max_buffer_size
+        
+        self.episode_buffer: List[Dict[str, Any]] = []
+        self.n_envs = 0
+        self.rollout_counter = 0
+        self.master_csv = self.ws.dirs['telemetry_iteration']/ f"iter{iteration:02d}_seed{seed_id}.csv"
+    
+    def _on_training_start(self) -> None:
+        self.n_envs = self.training_env.num_envs
+        print(f"🚀 MultiEnvTracker: {self.n_envs} parallel envs")
+    
     def _on_step(self) -> bool:
-        # Access the current observation (usually 'new_obs' in PPO)
-        obs = self.locals['new_obs']
-        
-        for i in self.obs_indices:
-            self.episode_data[i].append(obs[0, i])
-            
-        if self.locals['dones'][0]:
-            info = self.locals['infos'][0]
-            if "TimeLimit.truncated" in info and info["TimeLimit.truncated"]:
-                self.outcomes["trunc"] += 1
-            else:
-                self.outcomes["term"] += 1
-        return True
-
-    def _on_rollout_end(self) -> None:
-        summary = {}
-        for i in self.obs_indices:
-            data = np.array(self.episode_data[i])
-            if len(data) > 0:
-                summary[f"Obs_{i}"] = {
-                    "mean": float(np.mean(data)),
-                    "std": float(np.std(data)),
-                    "p25": float(np.percentile(data, 25)),
-                    "p75": float(np.percentile(data, 75)),
-                }
-        
-        # Log to TensorBoard for visual check
-        total = self.outcomes["trunc"] + self.outcomes["term"]
-        trunc_rate = self.outcomes["trunc"] / total if total > 0 else 0
-        self.logger.record("supervisor/truncation_rate", trunc_rate)
-        
-        self.rollout_stats.append(summary)
-        
-        # Save to JSON
-        file_path = os.path.join(self.save_path, "rollout_summaries.json")
-        with open(file_path, "w") as f:
-            json.dump(self.rollout_stats, f, indent=4)
-        
-        # Reset buffers
-        self.episode_data = {i: [] for i in self.obs_indices}
-        self.outcomes = {"trunc": 0, "term": 0}
-
-# ==========================================
-# 2. The Performance Evaluators (Scores/Fuel)
-# ==========================================
-class ComprehensiveEvalCallback(BaseCallback):
-    """
-    Feeds the Human Engineer.
-    Tracks 'True' score, fuel usage, and strict landing success.
-    """
-    def __init__(self, threshold_score=200, verbose=0):
-        super(ComprehensiveEvalCallback, self).__init__(verbose)
-        self.threshold_score = threshold_score
-        self.episode_scores = []
-        self.current_episode_fuel = 0.0
-        self.success_achieved_early = False
-
-    def _on_step(self) -> bool:
-        # Fuel Tracking
-        action = self.locals['actions'][0]
-        if action == 2: self.current_episode_fuel += 0.3
-        elif action in [1, 3]: self.current_episode_fuel += 0.03
-
-        # Episode End Logic
-        if self.locals['dones'][0]:
-            info = self.locals['infos'][0]
-            
-            if 'episode' in info:
-                true_score = info['episode']['r']
-                self.episode_scores.append(true_score)
-                self.logger.record("metrics/true_episode_score", true_score)
-                
-                # Rolling Avg Check
-                if len(self.episode_scores) >= 100:
-                    rolling_avg = np.mean(self.episode_scores[-100:])
-                    if rolling_avg >= self.threshold_score and not self.success_achieved_early:
-                        self.success_achieved_early = True
-                        print(f"✨ EARLY SUCCESS: Rolling Avg {rolling_avg:.1f} > {self.threshold_score}")
-
-            # Strict Positional Check
-            term_obs = info.get("terminal_observation")
-            if term_obs is not None:
-                is_centered = abs(term_obs[0]) < 0.2
-                is_upright = abs(term_obs[4]) < 0.1
-                legs_down = term_obs[6] > 0.5 and term_obs[7] > 0.5
-                strict_success = int(is_centered and is_upright and legs_down)
-                self.logger.record("metrics/strict_position_success", strict_success)
-
-            self.logger.record("metrics/est_fuel_consumed", self.current_episode_fuel)
-            self.current_episode_fuel = 0.0
-            
+        """Capture EVERY episode completion across ALL envs"""
+        for env_idx in range(self.n_envs):
+            if self.locals['dones'][env_idx]:
+                info = self.locals['infos'][env_idx]
+                if 'episode' in info:
+                    term_obs = info.get('terminal_observation', self.locals['new_obs'][env_idx])
+                    
+                    # === 1. BASE EPISODE DATA ===
+                    ep_data = {
+                        'rollout_id': self.rollout_counter,
+                        'env_id': env_idx,
+                        'ep_rew_total': float(info['episode']['r']),
+                        'ep_len': int(info['episode']['l']),
+                        'timestep_global': int(self.num_timesteps),
+                        'terminal_status': self._compute_terminal_status(term_obs, info),
+                        'x_pos':term_obs[0],
+                        'y_pos':term_obs[1],
+                        'x_vel':term_obs[2],
+                        'y_vel':term_obs[3],
+                        'angle':term_obs[4],
+                        'angular_vel':term_obs[5],
+                        'leg1_contact':term_obs[6],
+                        'leg2_contact':term_obs[7]
+                    }
+                    
+                    # === 2. REWARD COMPONENTS ===
+                    components = info.get('reward_components', {})
+                    ep_data.update({f'reward_{k.replace(" ", "_").replace("-", "_")}': float(v) 
+                                   for k, v in components.items()})
+                    
+                    self.episode_buffer.append(ep_data)
         return True
     
+    def _compute_terminal_status(self, term_obs, info):
+        """Semantic tags for terminal state"""
+        # Kinematic Stability Checks
+        is_centered = abs(term_obs[0]) < 0.2
+        is_out_of_bounds = abs(term_obs[0]) > 0.95 or term_obs[1] > 0.95
+        is_upright = abs(term_obs[4]) < 0.1 if is_centered else abs(term_obs[4]) < 0.38
+        low_velocity = abs(term_obs[2]) < 0.1 and abs(term_obs[3]) < 0.1 
+
+        # Physics Contact Checks
+        legs_down = term_obs[6] >= 0.5 and term_obs[7] >= 0.5
+        resting_on_one_leg = (term_obs[6] > 0.5) != (term_obs[7] > 0.5)
+        below_pad = term_obs[1] < 0.0
+
+        # Truncated (timeout)?
+        if info.get('TimeLimit', {}).get('truncated', False):
+            return 'landed_off_centered_timeout' if legs_down else 'hover_timeout'
+        
+        # True termination
+        if is_upright and legs_down:
+            return 'landed_centered' if is_centered else 'landed_off_centered'
+        elif is_upright and low_velocity and resting_on_one_leg and below_pad:
+            return "landed_but_slid_into_valley"
+        elif is_out_of_bounds:
+            return 'out_of_bounds'
+        else:
+            return 'crashed'
+    
+    def _on_rollout_end(self) -> None:
+        """Append rollout episodes to master CSV + log aggregates"""
+        if self.episode_buffer:
+            # buffer only contains episodes from this rollout
+            # We append to master CSV for incremental collection, crash-proof
+            df = pd.DataFrame(self.episode_buffer)
+            df.to_csv(self.master_csv, mode='a', header=not self.master_csv.exists(), index=False)
+            # Aggregates → progress.csv (Monitor-style)
+            scores = df['ep_rew_total'].values
+            self.logger.record("rollout/ep_count", len(scores))
+            self.logger.record("rollout/ep_score_median", float(np.median(scores)))
+            self.logger.record("rollout/ep_score_p90", float(np.percentile(scores, 90)))
+        # Clear Buffer for next Rollout
+        self.episode_buffer.clear()
+        self.rollout_counter += 1
+"""     Data analysis scripts for Diagnostician 1 will go below, more streamline to just incoroporate into callback when training ends
+    def _on_training_end(self) -> None:
+        #Final LLM-ready behavior summary
+        if self.master_csv.exists() and self.master_csv.stat().st_size > 0:
+            df_all = pd.read_csv(self.master_csv)
+            summary = self._compress_behavior(df_all)
+            
+            summary_path = self.ws.dirs['telemetry'] / f"behavior_iter{self.iteration:03d}.json"
+            with open(summary_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            print(f"✅ Behavior summary: {summary_path} ({len(df_all)} episodes)")
+    
+    def _compress_behavior(self, df: pd.DataFrame) -> Dict[str, Any]:
+        #12 physics-based metrics + status dist (reward-invariant!)
+        scores = df['true_score']
+        statuses = df['terminal_status']
+        
+        # Semantic rates 
+        status_dist = statuses.value_counts(normalize=True).to_dict()
+        
+        return {
+            "n_episodes": int(len(df)),
+            "median_score": float(scores.median()),
+            
+            # Physics-based (reward invariant!)
+            "crash_rate": float(status_dist.get('crashed', 0)),
+            "landed_centered_rate": float(status_dist.get('landedcentered', 0)),
+            "landed_offcenter_rate": float(status_dist.get('landedoffcentered', 0)),
+            "hover_timeout_rate": float(status_dist.get('hovertimeout', 0)),
+            "out_of_bounds_rate": float(status_dist.get('outofbounds', 0)),
+            
+            # Stability metrics
+            "wild_oscillation_rate": float((df['terminal_x'].abs() > 0.8).mean()),
+            "spin_rate": float((df['terminal_angle_deg'].abs() > 45).mean()),
+            "x_stability": float(df['terminal_x'].std()),
+            "leg_contact_rate": float(((df['left_leg'] > 0.5) & (df['right_leg'] > 0.5)).mean()),
+            
+            # Durations
+            "avg_crash_length": float(df[statuses == 'crashed']['ep_len'].mean() if 'crashed' in statuses else 0),
+            "avg_hover_length": float(df[statuses == 'hovertimeout']['ep_len'].mean() if 'hovertimeout' in statuses else 0),
+            
+            "terminal_status_dist": {k: float(v) for k, v in status_dist.items()}
+        }
+"""
+# ==========================================
+# The Entropy Scheduler (Exploration)
+# ==========================================
+class EntropyScheduleCallback(BaseCallback):
+    """Safe 0.02 -> 0.001 linear entropy schedule for PPO."""
+    def __init__(self, initial_ent_coef=0.02, final_ent_coef=0.001, total_timesteps=1e6, verbose=0):
+        super().__init__(verbose)
+        self.initial_ent_coef = initial_ent_coef
+        self.final_ent_coef = final_ent_coef
+        self.total_timesteps = total_timesteps
+
+    def _on_step(self) -> bool:
+        # 1. Calculate "progress_remaining" (1.0 starts, 0.0 ends)
+        # SB3 tracks num_timesteps internally
+        progress = max(0.0, 1.0 - self.num_timesteps / self.total_timesteps)
+        
+        # 2. Calculate current entropy value (Linear decay example)
+        current_ent_coef = self.final_ent_coef + (self.initial_ent_coef - self.final_ent_coef) * progress
+        
+        # 3. Inject the new value directly into the model
+        # For PPO/A2C, this attribute controls the loss calculation
+        self.model.ent_coef = current_ent_coef
+        
+        # Logged to progress_iterXX.csv with other optimization data
+        self.logger.record("train/ent_coef", current_ent_coef)
+        
+        return True
 
 
-
-class FourWayEvalCallback(BaseCallback):
+class FourWayEvalCallback(BaseCallback): 
+    # Mostly depreciated,replaced by MultiEnvEpisodeTracker
+    # Kept incase evaluations during training neccesary in future
     """
     Evaluates the agent on 4 configurations (Base/Shaped x Det/Stoch)
     and logs them in LONG format (Tidy Data) for easier analysis.
@@ -219,37 +283,3 @@ class FourWayEvalCallback(BaseCallback):
 
         return True
 
-# ==========================================
-# 2. The Entropy Scheduler (Exploration)
-# ==========================================
-class EntropyScheduleCallback(BaseCallback):
-    def __init__(self, initial_ent_coef: float, final_ent_coef: float, total_timesteps: int, verbose=0):
-        super().__init__(verbose)
-        self.initial_ent_coef = initial_ent_coef
-        self.final_ent_coef = final_ent_coef
-        self.total_timesteps = total_timesteps
-
-    def _on_step(self) -> bool:
-        # 1. Calculate "progress_remaining" (1.0 starts, 0.0 ends)
-        # SB3 tracks num_timesteps internally
-        progress = 1.0 - (self.num_timesteps / self.total_timesteps)
-        
-        # 2. Calculate current entropy value (Linear decay example)
-        current_ent_coef = self.final_ent_coef + (self.initial_ent_coef - self.final_ent_coef) * progress
-        
-        # 3. Inject the new value directly into the model
-        # For PPO/A2C, this attribute controls the loss calculation
-        self.model.ent_coef = current_ent_coef
-        
-        # Optional: Log it to TensorBoard so you can verify it's changing
-        self.logger.record("train/ent_coef", current_ent_coef)
-        
-        return True
-    # --- Usage ---
-# 1. Define the callback (e.g., decay from 0.1 down to 0.001)
-# entropy_callback = EntropyScheduleCallback(initial_ent_coef=0.1, final_ent_coef=0.001)
-
-# model = PPO("MlpPolicy", "CartPole-v1", verbose=1, ent_coef=0.1) # Initial value here matters less as callback overwrites it
-
-# 2. Pass the callback to learn()
-# model.learn(total_timesteps=50000, callback=entropy_callback)

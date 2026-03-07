@@ -1,120 +1,103 @@
-import argparse
-import ollama
-import warnings
 import time
+import re
 from datetime import datetime, timedelta 
-import os
-import sys
+import warnings
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
 # -- PROJECT IMPORTS --
 import prompts  
 from src.workspace_manager import ExperimentWorkspace
 from src.code_validation import CodeValidator
-from src import utils
+from src.ledger import ExperimentLedger
 from src.config import Config
-from src.llm_utils import *
 from src.cognitive_node import CognitiveNode
+from src.utils import extract_python_code
 
 MODEL_NAME = "gpt-oss:20b"
-# Enabling thinking trace based on model name
-think_flag = False #get_thinking_flag(MODEL_NAME)
-
 
 def get_inital_shaping():
-    # For catching excution time at the end 
     start_time = time.perf_counter()
 
-    # 1. Initialize Workspace
-    ws = ExperimentWorkspace()
-    brain = CognitiveNode(iteration = 0 , workspace = ws, model = MODEL_NAME)
-    save_path = ws.get_path("code", 0, "reward.py") # Where we will save generated code to be accessed by train.py script
- 
-
+    # 1. Initialize Workspace & Ledger for Iteration 0
+    ws = ExperimentWorkspace(iteration=0)
+    brain = CognitiveNode(iteration=0, workspace=ws, model=MODEL_NAME)
+    ledger = ExperimentLedger(ws.model_root_path)
     
-
-    role, task = prompts.build_initial_shaping_prompt(Config.code_zero_template)
-
-    response = brain.chat(phase_name='initial',
-                                system_prompt=role,
-                                user_prompt=task,
-                                parse_json=False,
-                                options=Config.get_coder_options(MODEL_NAME))
+    save_path = ws.get_path("code", 0, "reward.py") 
     
-    # Imports are hit or miss with LLMs, best to just add them in to avoid failing code validation over missing imports
-    clean_code = f"import numpy as np\nimport math\n" 
-    clean_code += utils.extract_python_code(response)
+    print("🔵 AGENT (Iter 0): Generating Baseline Physics Heuristics...")
+    sys_prompt = prompts.load_template('roles','initial','initial_system_prompt')
+    user_prompt = prompts.load_template('tasks','initial','initial_user_prompt')
+
+    response = brain.chat(
+        phase_name='initial',
+        system_prompt=sys_prompt,
+        user_prompt=user_prompt,
+        options=Config.think_options
+    )
+    
+    clean_code = "import numpy as np\nimport math\n" 
+    clean_code += extract_python_code(response)
         
     validator = CodeValidator(clean_code)
-    is_valid, feedback = validator.validate_static()
-    if is_valid: 
-        is_valid, feedback = validator.validate_runtime(strict_mode = False)
-        if not is_valid:
-            print("*"*20)
-            print("Initial generated code failed runtime analysis")
-            print("*"*20)
-            print(f"{feedback}")
-            print("*"*20)
-
-    else:
-        print("*"*20)
-        print("Initial generated code failed static analysis")
-        print("*"*20)
-        print(f"{feedback}")
-        print("*"*20)
+    is_valid, feedback = validator.validate()
 
     # --- RETRY LOOP ---
-    # This runs if validation failed OR if an exception occurred above
     attempt_num = 0
     while not is_valid and attempt_num < 3:
         attempt_num += 1
         print(f"⚠️ Validation failed (Attempt {attempt_num}). Feedback: {feedback}")
         
-        # Save to the 'failed_code' directory defined in Workspace
         fail_filename = f"fail_{attempt_num:02d}.py"
         fail_path = ws.get_path("failed_code", 0, fail_filename)
         
-        if attempt_num == 1:
-            with open(fail_path, "w") as f:
-                f.write(f"# Error: {feedback}\n")
-                f.write(clean_code)
+        with open(fail_path, "w") as f:
+            f.write(f"# Error: {feedback}\n")
+            f.write(clean_code)
             
-        print(f"🔧 Fixing Code ")
+        user_prompt += (
+            f"\n\nYour previous attempt failed validation with the following error:\n"
+            f"ERROR: {feedback}\n"
+            f"Please analyze the error, fix the code, and output ONLY the corrected Python code inside a markdown block."
+            f"Below is your previous generated code\n"
+            f"{clean_code}"
+        )
+        code_fix_response = brain.chat(
+            phase_name='code_fix',
+            system_prompt=sys_prompt,
+            user_prompt=user_prompt,
+            options=Config.think_options
+        )
         
-        fix_role, fix_task = prompts.build_fix_prompt(Config.code_fix_template,clean_code, feedback)
+        clean_code = "import numpy as np\nimport math\n" 
+        clean_code += extract_python_code(code_fix_response)
         
-        # LLM code self-correction call
-        code_fix_response = brain.chat(phase_name='code_fix',
-                                       system_prompt=fix_role,
-                                       user_prompt=fix_task,
-                                       parse_json=False,
-                                       options=Config.get_coder_options(MODEL_NAME))
-        clean_code = f"import numpy as np\nimport math\n" 
-        clean_code = utils.extract_python_code(code_fix_response)
         validator = CodeValidator(clean_code)
-        is_valid, feedback = validator.validate_static()
+        is_valid, feedback = validator.validate()
 
-        if is_valid:
-            is_valid, feedback = validator.validate_runtime()
-    # Save code to file to train the first iteration agent
-    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    header = f"# Generated by {MODEL_NAME} (Iter {0}) on {timestamp_str}\n"
-    final_content = header + clean_code
-    try:
-        with open(save_path, "w") as f:
-            f.write(final_content)
-        if is_valid:
-            print(f"✅ Code validated and saved.")
-    except Exception as e:
-        print(f"❌ Phase 0, Error saving code: {e}")
+    # --- SAVE ARTIFACTS ---
+    if is_valid:
+        timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        final_content = f"# Generated by {MODEL_NAME} (Iter 0) on {timestamp_str}\n" + clean_code
+        
+        try:
+            with open(save_path, "w") as f:
+                f.write(final_content)
+            print(f"✅ Code validated and saved to {save_path}")
+            
+            # CRITICAL: Log Iteration 0 Intent so Iteration 1 can validate it
+            initial_hypothesis = "Iteration 0 Baseline: Implemented basic physics heuristics (minimize velocity, stay upright, approach target) to establish stable initial PPO training."
+            ledger.log_hypothesis(iteration=0, validator_payload=initial_hypothesis)
+            print("📓 Baseline hypothesis logged to ledger.")
+            
+        except Exception as e:
+            print(f"❌ Error saving code: {e}")
+    else:
+        print("❌ CRITICAL: Failed to generate valid code after 3 attempts.")
 
-    # Save cognition markdown 
     brain.save_report()
-
-    elapsed_time =time.perf_counter()-start_time
+    elapsed_time = time.perf_counter() - start_time
     print(f"Execution took: {timedelta(seconds=elapsed_time)}")
-
-
 
 if __name__ == "__main__":
     get_inital_shaping()

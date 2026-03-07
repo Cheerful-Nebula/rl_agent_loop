@@ -1,141 +1,57 @@
-from . import loader
-import json
-from typing import Any
-from src.utils import performance_telemetry_as_table,training_telemetry_as_table,format_diagnostician_input
+from typing import Tuple
 
-
-def build_training_diagnosis_prompt(template: tuple[str,str], metrics: dict[Any,Any])-> tuple[str,str]:
-    """
-    Builds a LLM prompt - diagnosising PPO training optimization
-    """
-
-    # Grab system prompt
-    system_role = loader.load_template("roles", "analyst", template[0])
-
-    # Converting data to formated markdown tables
-    #training_table= training_telemetry_as_table(metrics["training_dynamics"])
-    training_table= format_diagnostician_input(metrics)
-
-    # Load the diagnosis task template
-    task_template = loader.load_template("tasks", "analyze",template[1])
-
-    # Build user task
-    user_task = task_template.format(
-        training_table=training_table
+def build_strategist_prompt(template: Tuple[str, str], iteration_number: int, current_reward_code: str, diagnostic_report: str, experiment_ledger: str) -> Tuple[str, str]:
+    """Builds the prompt for the Strategist to generate reward shaping proposals."""
+    system_role = template[0]
+    user_task = template[1].format(
+        iteration_number=iteration_number,
+        current_reward_code=current_reward_code,
+        experiment_ledger=experiment_ledger,
+        diagnostic_report=diagnostic_report
     )
-
     return system_role, user_task
 
-def build_performance_diagnosis_prompt(template: tuple[str,str], metrics: dict[Any,Any])-> tuple[str,str]:
-    """
-    Builds a LLM prompt - diagnosising PPO training optimization
-    """
-
-    # Grab system prompt
-    system_role = loader.load_template("roles", "analyst", template[0])
-
-    # Converting data to formated markdown tables
-    performance_table= performance_telemetry_as_table(metrics["performance"])
-
-    # Load the diagnosis task template
-    task_template = loader.load_template("tasks", "analyze",template[1])
-
-    # Build user task
-    user_task = task_template.format(
-        performance_table=performance_table
+def build_organizer_prompt(template: Tuple[str, str], raw_strategist_output: str) -> Tuple[str, str]:
+    """Builds the prompt for the Organizer to sanitize and format Strategist proposals."""
+    system_role = template[0]
+    user_task = template[1].format(
+        raw_strategist_output=raw_strategist_output
     )
-
     return system_role, user_task
 
-def build_initial_shaping_prompt(template: tuple[str,str]):
-    """Constructs prompts for generating initial reward shaping function."""
-    role = loader.load_template("roles", "coder", template[0])
-    
-    task = loader.load_template("tasks", "code_generation", template[1])
-
-    return role, task
-
-def build_coding_prompt(template: tuple[str,str],plan, current_code):
-    """Constructs prompts for Phase 2 (Implementation)."""
-    role = loader.load_template("roles", "coder", template[0])
-    
-    task_raw = loader.load_template("tasks", "code_generation", template[1])
-    task = task_raw.format(
-        plan=plan,
-        current_code=current_code if current_code else "# No existing code"
+def build_lead_prompt(template: Tuple[str, str], iteration: int, experiment_ledger: str, strategist_proposals_markdown: str) -> Tuple[str, str]:
+    """Builds the prompt for the Research Lead to make an executive decision."""
+    system_role = template[0]
+    user_task = template[1].format(
+        iteration=iteration,
+        experiment_ledger=experiment_ledger,
+        strategist_proposals_markdown=strategist_proposals_markdown
     )
-    return role, task
+    return system_role, user_task
 
-def build_fix_prompt(template: tuple[str,str],invalid_code, feedback):
-    """Constructs prompts for Phase 3: Debugging/fixing."""
-    role = loader.load_template("roles", "coder", template[0])
-    
-    task_raw = loader.load_template("tasks", "code_fix", template[1])
-    task = task_raw.format(
-        clean_code=invalid_code,
-        feedback=feedback
+def build_dispatcher_prompt(template: Tuple[str, str], research_lead_decision: str) -> Tuple[str, str]:
+    """Builds the prompt for the Dispatcher to route payloads to Coder and Validator."""
+    system_role = template[0]
+    user_task = template[1].format(
+        research_lead_decision=research_lead_decision
     )
-    return role, task
+    return system_role, user_task
 
-def build_formatter_prompt(template: tuple[str,str], raw_plan):
-    """Constructs prompts for generating initial reward shaping function."""
-
-    role = loader.load_template("roles", "formatter", template[0])
-    task_raw = loader.load_template("tasks", "to_format", template[1])
-    
-    task = task_raw.format(
-        raw_plan = raw_plan
+def build_coder_prompt(template: Tuple[str, str], current_reward_code: str, coder_payload_from_dispatcher: str) -> Tuple[str, str]:
+    """Builds the prompt for the Coder to implement the reward function update."""
+    system_role = template[0]
+    user_task = template[1].format(
+        current_reward_code=current_reward_code,
+        coder_payload_from_dispatcher=coder_payload_from_dispatcher
     )
-    return role, task
+    return system_role, user_task
 
-def build_formatter_fix_prompt(template: tuple[str,str], raw_plan,json_attempt):
-    """Constructs prompts for generating initial reward shaping function."""
-
-    role = loader.load_template("roles", "formatter", template[0])
-    task_raw = loader.load_template("tasks", "to_format", template[1])
-
-    task = task_raw.format(
-        raw_plan = raw_plan,
-        json_attempt=json_attempt
+def build_validator_prompt(template: Tuple[str, str], previous_iteration_number: int, validator_payload_from_dispatcher: str, new_diagnostic_report: str) -> Tuple[str, str]:
+    """Builds the prompt for the Validator to evaluate empirical results against the hypothesis."""
+    system_role = template[0]
+    user_task = template[1].format(
+        previous_iteration_number=previous_iteration_number,
+        validator_payload_from_dispatcher=validator_payload_from_dispatcher,
+        new_diagnostic_report=new_diagnostic_report
     )
-    return role, task
-
-def build_validator_prompt(prev_hypothesis, prev_changes, prev_metrics):
-    """
-    Builds the prompt for the Phase 0 Validator.
-    """
-    system_role = """
-    You are a skeptical Scientific Reviewer for a Reinforcement Learning experiment.
-    Your GOAL is to validate if the Researcher's hypothesis was supported by the data.
-    
-    DEFAULT POSITION: The hypothesis is REFUTED unless the data proves otherwise clearly.
-    
-    RULES:
-    1. Correlation != Causality. If the reward improved but the targeted metric (e.g., tilt) got worse, it is REFUTED.
-    2. Noise Tolerance. Changes of < 5% are statistical noise. Mark as INCONCLUSIVE (False).
-    3. Strictness. Do not be "nice". Only mark is_validated=True if the specific mechanism predicted actually happened.
-    """
-    
-    user_task = f"""
-    # EXPERIMENT REVIEW
-    
-    ## The Hypothesis
-    "{prev_hypothesis}"
-    
-    ## The Intervention (Changes Made)
-    {prev_changes}
-    
-    ## The Results (Data)
-    {prev_metrics}
-    
-    # TASK
-    Did the metrics support the hypothesis?
-    
-    # OUTPUT FORMAT (JSON ONLY)
-    {{
-        "is_validated": boolean,
-        "confidence_score": int (1-10),
-        "reasoning": "One short sentence explaining why."
-    }}
-    """
     return system_role, user_task

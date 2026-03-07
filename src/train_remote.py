@@ -5,10 +5,10 @@ from src.remote_ops import RemoteManager
 from src.config import Config
 from src.workspace_manager import ExperimentWorkspace
 
-def run_remote_cycle(iteration):
-    # 1. Initialize Local Workspace (Mac side)
+def run_remote_cycle(iteration: int, num_seeds: int):
+        # 1. Initialize Local Workspace (Mac side)
     # We need this to find the generated reward file to upload
-    ws = ExperimentWorkspace()
+    ws = ExperimentWorkspace(iteration=iteration)
     print(f"📡 [Remote-Manager] Initializing Remote Training for Iteration {iteration}")
 
     # 2. Setup Manager
@@ -22,7 +22,6 @@ def run_remote_cycle(iteration):
     # 3. UPLOAD: Send the generated reward code to Linux
     # Source: experiments/Campaign/Model/generated_code/iterXX_reward.py (Mac)
     local_reward_path = ws.get_path("code", iteration - 1, "reward.py")
-    
     # Dest: experiments/Campaign/Model/generated_code/iterXX_reward.py (Linux)
     # We use get_relative_path so we don't accidentally send Mac absolute paths (/Users/...) to Linux
     relative_path = ws.get_relative_path("code", iteration - 1, "reward.py")
@@ -30,23 +29,33 @@ def run_remote_cycle(iteration):
     print(f"📤 Uploading Reward Function: {local_reward_path}")
     manager.sync_file(str(local_reward_path), str(relative_path))
 
-    # 4. EXECUTE: Trigger Training on Linux
-    print(f"🚀 Triggering Remote Training (Iter {iteration})...")
+    # 2. EXECUTE: Trigger Sequential Training & Analysis on Linux
+    print(f"🚀 Triggering Remote Execution (Iter {iteration}) across {num_seeds} seeds...")
     
-    # We capture the Campaign Context from the Mac's shell (set by outer_loop.sh)
-    # and package it into a dictionary to inject into the Linux session.
     env_vars = {
-        "CAMPAIGN_TAG": os.environ.get("CAMPAIGN_TAG", "Debug_Campaign"),
-        "LLM_MODEL": os.environ.get("LLM_MODEL", "Debug_Model"),
+        "CAMPAIGN_TAG": os.environ.get("CAMPAIGN_TAG", ws.campaign_tag),
+        "LLM_MODEL": os.environ.get("LLM_MODEL", ws.raw_model_name),
         "TOTAL_TIMESTEPS": os.environ.get("TOTAL_TIMESTEPS", "50000")
     }
 
-    # The command is simple because the Manager handles the messy SSH parts.
-    # We use -u to force unbuffered output so the stream is real-time.
-    cmd = f"{Config.REMOTE_PYTHON_BIN} -u train.py --iteration {iteration}"
+    # Build a sequential command chain using '&&'
+    # If any step fails, the chain stops immediately.
+    remote_commands = []
     
-    # Use our new 'stream_command' to watch the progress on the Mac terminal
-    success = manager.stream_command(cmd, env_vars=env_vars)
+    # A. Loop over the seeds
+    for seed_id in range(num_seeds):
+        remote_commands.append(f"{Config.REMOTE_PYTHON_BIN} -u train.py --iteration {iteration} --seed_id {seed_id}")
+    
+    # B. Cap it off by running the analysis script ON THE LINUX BOX
+    remote_commands.append(f"{Config.REMOTE_PYTHON_BIN} -u src/analysis.py --iteration {iteration}")
+    
+    # Join them together: train 0 && train 1 && train 2 && analyze
+    compound_cmd = " && ".join(remote_commands)
+    #for command in remote_commands:
+     #   success = manager.stream_command(command, env_vars=env_vars)
+    # This blocks on the Mac until Linux finishes all training and aggregation
+    print(f"🔍 DEBUG: compound_cmd = {compound_cmd}")
+    success = manager.stream_command(compound_cmd, env_vars=env_vars)
     
     if not success:
         print("❌ Critical Failure: Remote training crashed.")
@@ -62,6 +71,7 @@ def run_remote_cycle(iteration):
     # Ensure the local folder exists before downloading
     local_metrics_dest.parent.mkdir(parents=True, exist_ok=True)
     
+    print(f"📥 Downloading Aggregated Metrics: {metrics_rel_path}")
     success = manager.retrieve_file(str(metrics_rel_path), str(local_metrics_dest))
     
     if not success:
@@ -73,6 +83,7 @@ def run_remote_cycle(iteration):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--iteration", type=int, required=True)
+    parser.add_argument("--num_seeds", type=int, default=3)
     args = parser.parse_args()
     
-    run_remote_cycle(args.iteration)
+    run_remote_cycle(args.iteration, args.num_seeds)
