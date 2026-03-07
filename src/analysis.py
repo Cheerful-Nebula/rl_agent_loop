@@ -11,7 +11,7 @@ import argparse
 
 
 # PROJECT IMPORTS 
-from src.workspace_manager import ExperimentWorkspace
+from workspace_manager import ExperimentWorkspace
 warnings.filterwarnings('ignore')
 
 ###########################################################

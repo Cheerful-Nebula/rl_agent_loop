@@ -37,7 +37,7 @@ def run_training_cycle(iteration:int, seed_id:int):
     # Setup Hardware, helper functions for hardware-aware hyperparameter optimization
     n_envs, device = get_hardware_config()
     ppo_params = get_optimized_ppo_params(n_envs, device)
-    print("ppo_params['device']: ",ppo_params['device'])
+
     # Create Environment, custom wrapper for injecting new Reward Function
     env = make_vec_env(lambda: make_env(reward_code_path), n_envs=n_envs, seed=seed_id,vec_env_cls=SubprocVecEnv)
 

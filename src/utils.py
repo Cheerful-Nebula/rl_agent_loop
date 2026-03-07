@@ -639,7 +639,7 @@ def get_optimized_ppo_params(n_envs, device_type="auto"):
 
 def get_hardware_config():
     system = platform.system()
-    if system == "Linux": return 32, "cpu" #"cuda"
+    if system == "Linux": return 32, "cuda"
     elif system == "Darwin": return 8, "cpu" #"mps"
     return 4, "cpu"
 
