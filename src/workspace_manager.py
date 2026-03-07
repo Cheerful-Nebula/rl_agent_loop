@@ -42,11 +42,11 @@ class ExperimentWorkspace:
             "cognition_markdown": self.model_root_path / "cognition"/ "markdown_cognition_records",
             "code": self.model_root_path / "generated_code",
             "failed_code": self.model_root_path / "generated_code" / "failed_attempts",
-            "telemetry_iteration": self.model_root_path / "telemetry" / f"iteration{iteration:02d}",
+            "telemetry_iteration": self.model_root_path / "telemetry" / f"iteration_{int(iteration):02d}",
             "telemetry_payloads": self.model_root_path / "telemetry"/ "metric_payloads",
-            "plots": self.model_root_path / "artifacts" / f"iteration{iteration:02d}"/ "plots",
-            "models": self.model_root_path / "artifacts" / f"iteration{iteration:02d}" / "models",
-            "videos": self.model_root_path / "artifacts" / f"iteration{iteration:02d}"/ "videos"
+            "plots": self.model_root_path / "artifacts" / f"iteration{int(iteration):02d}"/ "plots",
+            "models": self.model_root_path / "artifacts" / f"iteration{int(iteration):02d}" / "models",
+            "videos": self.model_root_path / "artifacts" / f"iteration{int(iteration):02d}"/ "videos"
         }
 
         # 5. BUILD IT
@@ -100,7 +100,7 @@ class ExperimentWorkspace:
         
     def save_metrics(self, iteration, metrics_dict):
         """Saves a JSON report card for a specific iteration."""
-        filepath = self.get_path("telemetry_raw", iteration, "metrics.json")
+        filepath = self.get_path("telemetry_iteration", iteration, "metrics.json")
         with open(filepath, "w") as f:
             json.dump(metrics_dict, f, indent=4)
 

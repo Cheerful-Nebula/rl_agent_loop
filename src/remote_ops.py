@@ -58,7 +58,7 @@ class RemoteManager:
         remote_cmd_str = f"{prefix} cd {self.remote_root} && {command}"
         full_cmd = f"ssh {self.flags} {self.target} \"{remote_cmd_str}\""
         
-        print(f"📡 [Stream] Executing on {self.target}...")
+        print(f"📡 [Stream] Executing on {self.target}")
 
         # 3. Open the process
         process = subprocess.Popen(

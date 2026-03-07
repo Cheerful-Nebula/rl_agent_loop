@@ -47,7 +47,7 @@ def run_remote_cycle(iteration: int, num_seeds: int):
         remote_commands.append(f"{Config.REMOTE_PYTHON_BIN} -u train.py --iteration {iteration} --seed_id {seed_id}")
     
     # B. Cap it off by running the analysis script ON THE LINUX BOX
-    remote_commands.append(f"{Config.REMOTE_PYTHON_BIN} -u src/analysis.py --iteration {iteration}")
+    remote_commands.append(f"{Config.REMOTE_PYTHON_BIN} -u src/analysis.py --iteration {iteration} --num_seeds {num_seeds}")
     
     # Join them together: train 0 && train 1 && train 2 && analyze
     compound_cmd = " && ".join(remote_commands)
@@ -63,8 +63,8 @@ def run_remote_cycle(iteration: int, num_seeds: int):
 
     # 5. DOWNLOAD: Retrieve the Metrics Payload
     # Linux saved it to: experiments/Campaign/Model/telemetry/raw/iterXX_metrics.json
-    metrics_rel_path = ws.get_relative_path("telemetry_raw", iteration, "metrics.json")
-    local_metrics_dest = ws.get_path("telemetry_raw", iteration, "metrics.json")
+    metrics_rel_path = ws.get_relative_path("telemetry_payloads", iteration, f"iter{iteration:02d}_metric_payload.json")
+    local_metrics_dest = ws.get_path("telemetry_payloads", iteration, f"iter{iteration:02d}_metric_payload.json")
     
     print(f"📥 Downloading Metrics: {metrics_rel_path}")
     

@@ -1,6 +1,3 @@
-# Run Command In Terminal to Script so Python can find all modules
-# python -m testing_suite.mock_analysis filename
-
 import numpy as np
 import json
 from collections import defaultdict
@@ -10,8 +7,10 @@ import numpy as np
 import os
 import warnings
 import sys
+import argparse
 
-#- custom imports
+
+# PROJECT IMPORTS 
 from src.workspace_manager import ExperimentWorkspace
 warnings.filterwarnings('ignore')
 
@@ -752,10 +751,8 @@ def generate_diagnostic_report(metrics: dict) -> str:
     return report
 
 if __name__ == "__main__":
-    
-    if len(sys.argv) >1:
-        generate_metric_payload(sys.argv[1])
-    else:
-        print("No argument provided.")
-        sys.exit()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--iteration", type=int, required=True)
+    parser.add_argument("--num_seeds", type=int, default=3)
+    args = parser.parse_args()
     

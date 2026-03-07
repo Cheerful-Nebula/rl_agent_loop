@@ -14,7 +14,7 @@ from src.utils import *
 from src.callbacks import *
 from src.evaluation import evaluate_agent
 from src.config import Config 
-from src.plot_progress import *
+
 
 warnings.filterwarnings("ignore", message=".*pkg_resources is deprecated.*")
 
@@ -97,7 +97,7 @@ def run_training_cycle(iteration:int, seed_id:int):
     # Collect Evaluation Statistics and Merge 
     eval_data = evaluate_agent(
         model, 
-        iteration=iteration,
+        seed_id=seed_id,
         deterministic= True,
         reward_code_path=reward_code_path, 
         num_episodes=10
