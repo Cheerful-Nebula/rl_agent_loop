@@ -14,6 +14,8 @@ from src.cognitive_node import CognitiveNode
 from src.utils import extract_python_code
 
 MODEL_NAME = "gpt-oss:20b"
+#MODEL_NAME = Config.LLM_MODEL
+
 
 def get_inital_shaping():
     start_time = time.perf_counter()
@@ -25,9 +27,9 @@ def get_inital_shaping():
     
     save_path = ws.get_path("code", 0, "reward.py") 
     
-    print("🔵 AGENT (Iter 0): Generating Baseline Physics Heuristics...")
-    sys_prompt = prompts.load_template('roles','initial','initial_system_prompt')
-    user_prompt = prompts.load_template('tasks','initial','initial_user_prompt')
+    print("🔵 AGENT (Iter 0): Generating Initial Reward Function, Based On Physics Heuristics")
+    sys_prompt = prompts.load_template('system_prompts','initial','initial_system_prompt')
+    user_prompt = prompts.load_template('user_prompts','initial','initial_user_prompt')
 
     response = brain.chat(
         phase_name='initial',

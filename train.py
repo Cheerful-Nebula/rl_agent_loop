@@ -43,7 +43,7 @@ def run_training_cycle(iteration:int, seed_id:int):
 
     # Grab Path for saving raw data 
     logger_dir = ws.dirs["telemetry_iteration"] 
-    progress_csv_suffix = f"_{iteration:02d}_seed{seed_id}"
+    progress_csv_suffix = f"_iter{iteration:02d}_seed{seed_id}"
 
     # Initialize Callbacks
     entropy_callback = EntropyScheduleCallback(
@@ -110,7 +110,7 @@ def run_training_cycle(iteration:int, seed_id:int):
     end_time = time.perf_counter()
     elapsed_time = end_time - start_time
     # Format the output using timedelta
-    print(f"✅ Training Cycle Complete. Metrics passed to Controller.")
+    print(f"✅ Training Cycle Complete | Seed {seed_id}")
     print(f"Execution took: {timedelta(seconds=elapsed_time)}")
 
 if __name__ == "__main__":

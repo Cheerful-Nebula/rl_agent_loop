@@ -20,27 +20,27 @@ class Config:
     initial_template = (initial_role,initial_task)
 
     strategist_role = "strategist_system_prompt"
-    strategist_task = "strategist_system_prompt"
+    strategist_task = "strategist_user_prompt"
     strategist_template = (strategist_role,strategist_task)
 
     organizer_role = "organizer_system_prompt"
-    organizer_task = "organizer_system_prompt"
+    organizer_task = "organizer_user_prompt"
     organizer_template = (organizer_role,organizer_task)
 
     lead_role = "lead_system_prompt"
-    lead_task = "lead_system_prompt"
+    lead_task = "lead_user_prompt"
     lead_template = (lead_role,lead_task)
 
     dispatcher_role = "dispatcher_system_prompt"
-    dispatcher_task = "dispatcher_system_prompt"
+    dispatcher_task = "dispatcher_user_prompt"
     dispatcher_template = (dispatcher_role,dispatcher_task)
 
     coder_role = "coder_system_prompt"
-    coder_task = "coder_system_prompt"
+    coder_task = "coder_user_prompt"
     coder_template = (coder_role,coder_task)
 
     validator_role = "validator_system_prompt"
-    validator_task = "validator_system_prompt"
+    validator_task = "validator_user_prompt"
     validator_template = (validator_role,validator_task)
 
 

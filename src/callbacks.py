@@ -33,7 +33,7 @@ class MultiEnvEpisodeTracker(BaseCallback):
         self.episode_buffer: List[Dict[str, Any]] = []
         self.n_envs = 0
         self.rollout_counter = 0
-        self.master_csv = self.ws.dirs['telemetry_iteration']/ f"iter{iteration:02d}_seed{seed_id}.csv"
+        self.master_csv = self.ws.dirs['telemetry_iteration']/ f"iter{iteration:02d}_seed{seed_id}_train.csv"
     
     def _on_training_start(self) -> None:
         self.n_envs = self.training_env.num_envs

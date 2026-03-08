@@ -30,7 +30,7 @@ def run_remote_cycle(iteration: int, num_seeds: int):
     manager.sync_file(str(local_reward_path), str(relative_path))
 
     # 2. EXECUTE: Trigger Sequential Training & Analysis on Linux
-    print(f"🚀 Triggering Remote Execution (Iter {iteration}) across {num_seeds} seeds...")
+    print(f"🚀 Triggering Remote Execution (Iter {iteration}) across {num_seeds} seeds")
     
     env_vars = {
         "CAMPAIGN_TAG": os.environ.get("CAMPAIGN_TAG", ws.campaign_tag),
@@ -62,9 +62,9 @@ def run_remote_cycle(iteration: int, num_seeds: int):
         sys.exit(1)
 
     # 5. DOWNLOAD: Retrieve the Metrics Payload
-    # Linux saved it to: experiments/Campaign/Model/telemetry/raw/iterXX_metrics.json
-    metrics_rel_path = ws.get_relative_path("telemetry_payloads", iteration, f"iter{iteration:02d}_metric_payload.json")
-    local_metrics_dest = ws.get_path("telemetry_payloads", iteration, f"iter{iteration:02d}_metric_payload.json")
+    # Linux saved it to: experiments/Campaign/Model/telemetry/metric_payloads/iterXX_metrics.json
+    metrics_rel_path = ws.get_relative_path("telemetry_payloads", iteration, "metric_payload.json")
+    local_metrics_dest = ws.get_path("telemetry_payloads", iteration, "metric_payload.json")
     
     print(f"📥 Downloading Metrics: {metrics_rel_path}")
     

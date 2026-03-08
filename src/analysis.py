@@ -11,7 +11,7 @@ import argparse
 
 
 # PROJECT IMPORTS 
-from workspace_manager import ExperimentWorkspace
+from src.workspace_manager import ExperimentWorkspace
 warnings.filterwarnings('ignore')
 
 ###########################################################
@@ -88,8 +88,7 @@ def analyze_single_seed_progress(csv_path: str, seed_id: int, window_size: int =
     return payload
 
 
-
-def aggregate_progress_seeds(seed_payloads: list) -> str:
+def aggregate_progress_seeds(seed_payloads: list) -> dict:
     """
     Ingests a list of payloads from analyze_single_seed_progress().
     Computes cross-seed robustness, SNR, and trajectory isomorphism.
@@ -133,7 +132,6 @@ def aggregate_progress_seeds(seed_payloads: list) -> str:
     # 5. Build the Mac-bound LLM Payload
     # We apply the semantic boolean thresholds HERE, at the population level.
     payload = {
-        "multi_seed_optimization_health": {
             "population_metrics": {
                 "mean_final_reward": round(reward_mean, 2),
                 "cross_seed_reward_std": round(reward_std, 2),
@@ -153,9 +151,8 @@ def aggregate_progress_seeds(seed_payloads: list) -> str:
                 "is_universally_converged": bool(reward_mean > 0 and reward_std < abs(reward_mean) * 0.2)
             }
         }
-    }
     
-    return json.dumps(payload, indent=2)
+    return payload
 
 
 def translate_optimization_health(agg_progress_json: dict) -> str:
@@ -304,7 +301,7 @@ def analyze_single_seed_eval(csv_path: str, seed_id: int) -> dict:
     
     return payload
 
-def aggregate_eval_seeds(seed_payloads: list) -> str:
+def aggregate_eval_seeds(seed_payloads: list) -> dict:
     """
     Ingests a list of payloads from analyze_single_seed_eval().
     Computes cross-seed kinematic robustness, mechanical sensitivity, and success variance.
@@ -353,30 +350,28 @@ def aggregate_eval_seeds(seed_payloads: list) -> str:
     # 5. Build the Mac-bound LLM Payload
     # Semantic boolean thresholds are applied here to provide unarguable physical facts to the LLM.
     payload = {
-        "multi_seed_evaluation_health": {
-            "success_robustness": {
-                "population_mean_success_rate": round(mean_success, 3),
-                "cross_seed_success_std": round(std_success, 3),
-                "is_lottery_ticket_policy_flag": bool(std_success > 0.4) # e.g., one seed is 1.0, others are 0.0
+        "success_robustness": {
+            "population_mean_success_rate": round(mean_success, 3),
+            "cross_seed_success_std": round(std_success, 3),
+            "is_lottery_ticket_policy_flag": bool(std_success > 0.4) # e.g., one seed is 1.0, others are 0.0
             },
-            "kinematic_stability": {
+        "kinematic_stability": {
                 "population_mean_efficiency": round(mean_eff, 3),
                 "efficiency_coefficient_of_variation": round(cv_eff, 3),
                 "population_mean_chatter_rate": round(mean_chatter, 3),
                 "chatter_coefficient_of_variation": round(cv_chatter, 3),
                 "kinematically_sensitive_to_initialization_flag": bool(cv_eff > 0.5 or cv_chatter > 0.5)
+                },
+        "lateral_control": {
+            "population_mean_macro_oscillations": round(mean_oscillations, 2),
+            "systemic_lateral_instability_flag": bool(mean_oscillations > 5.0)
             },
-            "lateral_control": {
-                "population_mean_macro_oscillations": round(mean_oscillations, 2),
-                "systemic_lateral_instability_flag": bool(mean_oscillations > 5.0)
-            },
-            "failure_mode_analysis": {
-                "population_terminal_distribution": population_term_dist,
-                "stable_but_suboptimal_flag": bool(mean_success < 0.2 and std_success < 0.1), # Fails consistently the exact same way
-                "universal_success_flag": bool(min(success_rates) > 0.85) # Every single seed reliably lands
+        "failure_mode_analysis": {
+            "population_terminal_distribution": population_term_dist,
+            "stable_but_suboptimal_flag": bool(mean_success < 0.2 and std_success < 0.1), # Fails consistently the exact same way
+            "universal_success_flag": bool(min(success_rates) > 0.85) # Every single seed reliably lands
             }
         }
-    }
     
     return payload
 
@@ -431,173 +426,6 @@ def translate_behavior_kinematics(agg_eval_json: dict) -> str:
 ###########################################################
 # For train_eps.csv
 ############################################################
-def translate_reward_topology(agg_stochastic_json: dict) -> str:
-    """
-    Translates aggregated stochastic training metrics into a Reward Topology report.
-    Automatically generates a Markdown table for algorithmic credit assignment.
-    """
-    stoch = agg_stochastic_json.get("multi_seed_stochastic_health", {})
-    topo = stoch.get("global_reward_topology", {})
-    comps = stoch.get("dynamic_component_analysis", {})
-    frag = stoch.get("policy_fragility", {})
-
-    md = ["### 3. Reward Topology & Algorithmic Credit Assignment\n"]
-
-    # A. Global Objective Alignment
-    md.append("#### A. Global Objective Alignment (Oracle Test)")
-    oracle_rho = topo.get("mean_objective_alignment_rho", 0)
-    md.append(f"- **Objective Alignment ($\\rho$):** `{oracle_rho:.3f}`")
-    
-    if topo.get("topology_is_inverted_flag"):
-        md.append("  - *Diagnosis:* **CRITICAL FAILURE.** The total generated reward is NEGATIVELY correlated with successful landings. The agent is receiving mathematically higher returns for crashing/drifting than for landing safely.")
-    elif oracle_rho < 0.5:
-        md.append("  - *Diagnosis:* Weak alignment. The shaped reward landscape is poorly correlated with the actual goal of landing.")
-
-    if topo.get("survival_hacking_detected_flag"):
-        md.append("  - *Action Required:* **Survival Hacking Detected.** The agent is farming points by hovering/delaying the episode. Add a temporal penalty or check for positive constant rewards.")
-
-    # B. Component-Level Credit Assignment (The Dynamic Table)
-    md.append("\n#### B. Component-Level Contribution (Algorithmic Credit Assignment)")
-    md.append("This table isolates the exact mathematical impact of each component you generated.")
-
-    # Grab the dynamic target name (default to Success if missing)
-    target_name = topo.get("target_metric_name", "Task Success")
-    md.append(f"| Reward Component | Correlation w/ {target_name} ($\\rho$) | Relative Magnitude | Diagnostic Flag |")
-    md.append("|:---|:---:|:---:|:---|")
-    
-    for comp_name, metrics in comps.items():
-        rho = metrics.get('alignment_rho', 0) # Key was renamed here
-        mag = metrics.get('relative_magnitude_pct', 0)
-        
-        flag = "🟢 Optimal"
-        if metrics.get('is_traitor_component'):
-            flag = "🔴 **TRAITOR COMPONENT** (Invert/Remove)"
-        elif metrics.get('is_dead_weight'):
-            flag = "🟡 **DEAD WEIGHT** (Scale Too Low)"
-        elif rho < 0.2:
-            flag = "⚪ Neutral/Noisy"
-
-        md.append(f"| `{comp_name}` | {rho:.3f} | {mag:.1f}% | {flag} |")
-
-    # C. Stochastic Fragility
-    md.append("\n#### C. Stochastic Policy Fragility")
-    cv = frag.get("mean_intra_rollout_cv", 0)
-    ent = frag.get("mean_terminal_entropy_norm", 0)
-    md.append(f"- **Intra-Rollout Reward CV:** `{cv:.3f}` (Variance across seeds with *frozen* weights)")
-    md.append(f"- **Terminal Mode Entropy:** `{ent:.3f}`")
-    
-    if frag.get("systemic_policy_collapse_flag"):
-        md.append("  - *Diagnosis:* The stochastic policy has completely collapsed into a single pathological failure mode. The KL penalty likely prevented escape from a severe local minimum.")
-    elif cv > 0.5:
-        md.append("  - *Diagnosis:* The policy is highly fragile. Even with fixed network weights, the agent's performance swings wildly depending on environment initialization.")
-
-    return "\n".join(md)
-
-
-
-def aggregate_stochastic_seeds(seed_payloads: list) -> str:
-    """
-    Ingests payloads from analyze_single_seed_stochastic().
-    Dynamically analyzes LLM-generated reward components to find misaligned gradients.
-    Returns the final JSON for the MacBook LLM Diagnostician.
-    """
-    if not seed_payloads:
-        return json.dumps({"error": "No stochastic seed payloads provided."})
-
-    num_seeds = len(seed_payloads)
-    
-    # 1. Extract Global Stats
-    oracle_rhos = [seed['objective_alignment_rho'] for seed in seed_payloads]
-    hacking_rhos = [seed['survival_hacking_rho'] for seed in seed_payloads]
-    entropies = [seed['terminal_entropy_norm'] for seed in seed_payloads]
-    cvs = [seed['intra_rollout_cv'] for seed in seed_payloads]
-    
-    global_success_rate = np.mean([seed['success_rate'] for seed in seed_payloads])
-    all_failures = [seed['dominant_failure'] for seed in seed_payloads]
-    global_dominant_failure = max(set(all_failures), key=all_failures.count)
-
-    # 2. Determine Global Target Metric
-    if 0.0 < global_success_rate < 1.0:
-        target_name = "Task Success"
-        metric_key = 'succ'
-    elif global_success_rate == 1.0:
-        target_name = "Impact Softness"
-        metric_key = 'imp'
-    else: # 0% Success
-        target_name = f"Composite Viability ({global_dominant_failure})"
-        metric_key = 'composite'
-        if global_dominant_failure == 'out_of_bounds': w_sp, w_kin, w_att = 0.7, 0.2, 0.1
-        elif global_dominant_failure == 'crashed': w_sp, w_kin, w_att = 0.2, 0.5, 0.3
-        elif global_dominant_failure == 'hover_timeout': w_sp, w_kin, w_att = 0.6, 0.2, 0.2
-        elif global_dominant_failure == 'landed_but_slid_into_valley': w_sp, w_kin, w_att = 0.1, 0.7, 0.2
-        else: w_sp, w_kin, w_att = 0.33, 0.33, 0.34
-
-    # 3. Aggregate Reward Components
-    comp_base_corrs = defaultdict(lambda: defaultdict(list))
-    comp_means = defaultdict(list)
-    
-    for seed in seed_payloads:
-        for col, corrs in seed.get('reward_components', {}).get('correlations', {}).items():
-            for c_type, val in corrs.items():
-                comp_base_corrs[col][c_type].append(val)
-        for col, mean_val in seed.get('reward_components', {}).get('means', {}).items():
-            comp_means[col].append(mean_val)
-            
-    # Compute component-level diagnostics
-    component_diagnostics = {}
-    total_abs_magnitude = sum([abs(np.mean(vals)) for vals in comp_means.values()]) + 1e-5
-    
-    for col in comp_base_corrs.keys():
-
-        mean_val = np.mean(comp_means[col])
-        relative_contribution = abs(mean_val) / total_abs_magnitude
-
-        # Resolve the chosen metric
-        if metric_key == 'composite':
-            mean_sp = np.mean(comp_base_corrs[col]['sp'])
-            mean_kin = np.mean(comp_base_corrs[col]['kin'])
-            mean_att = np.mean(comp_base_corrs[col]['att'])
-            mean_rho = (w_sp * mean_sp) + (w_kin * mean_kin) + (w_att * mean_att)
-        else:
-            mean_rho = np.mean(comp_base_corrs[col][metric_key])
-
-        component_diagnostics[col] = {
-            "alignment_rho": round(mean_rho, 3), 
-            "is_traitor_component": bool(mean_rho < -0.2), # Actively penalizing successful behavior
-            "relative_magnitude_pct": round(relative_contribution * 100, 1),
-            "is_dead_weight": bool(relative_contribution < 0.01) # Contributes < 1% to the gradient
-        }
-
-    # Aggregate Terminal Distributions
-    population_term_dist = defaultdict(float)
-    for seed in seed_payloads:
-        for status, pct in seed['terminal_distribution'].items():
-            population_term_dist[status] += (pct / num_seeds)
-
-    # 4. Build the Mac-bound LLM Payload
-    payload = {
-        "multi_seed_stochastic_health": {
-            "global_reward_topology": {
-                "mean_objective_alignment_rho": round(np.mean(oracle_rhos), 3),
-                "topology_is_inverted_flag": bool(np.mean(oracle_rhos) < 0),
-                "mean_survival_hacking_rho": round(np.mean(hacking_rhos), 3),
-                "survival_hacking_detected_flag": bool(np.mean(hacking_rhos) > 0.6),
-                "target_metric_name": target_name # Pass to translation layer
-            },
-            "dynamic_component_analysis": component_diagnostics,
-            "policy_fragility": {
-                "mean_intra_rollout_cv": round(np.mean(cvs), 3),
-                "mean_terminal_entropy_norm": round(np.mean(entropies), 3),
-                "systemic_policy_collapse_flag": bool(np.mean(entropies) < 0.1)
-            },
-            "population_terminal_distribution": dict(population_term_dist)
-        }
-    }
-
-    return json.dumps(payload, indent=2)
-
-
-
 def analyze_single_seed_stochastic(csv_path: str, seed_id: int, window_size: int = 500) -> dict:
     """
     Transforms episode-level stochastic training logs into metrics of reward topology.
@@ -711,7 +539,176 @@ def analyze_single_seed_stochastic(csv_path: str, seed_id: int, window_size: int
 
     return payload
 
+def aggregate_stochastic_seeds(seed_payloads: list) -> dict:
+    """
+    Ingests payloads from analyze_single_seed_stochastic().
+    Dynamically analyzes LLM-generated reward components to find misaligned gradients.
+    Returns the final JSON for the MacBook LLM Diagnostician.
+    """
+    if not seed_payloads:
+        return json.dumps({"error": "No stochastic seed payloads provided."})
+
+    num_seeds = len(seed_payloads)
+    
+    # 1. Extract Global Stats
+    oracle_rhos = [seed['objective_alignment_rho'] for seed in seed_payloads]
+    hacking_rhos = [seed['survival_hacking_rho'] for seed in seed_payloads]
+    entropies = [seed['terminal_entropy_norm'] for seed in seed_payloads]
+    cvs = [seed['intra_rollout_cv'] for seed in seed_payloads]
+    
+    global_success_rate = np.mean([seed['success_rate'] for seed in seed_payloads])
+    all_failures = [seed['dominant_failure'] for seed in seed_payloads]
+    global_dominant_failure = max(set(all_failures), key=all_failures.count)
+
+    # 2. Determine Global Target Metric
+    if 0.0 < global_success_rate < 1.0:
+        target_name = "Task Success"
+        metric_key = 'succ'
+    elif global_success_rate == 1.0:
+        target_name = "Impact Softness"
+        metric_key = 'imp'
+    else: # 0% Success
+        target_name = f"Composite Viability ({global_dominant_failure})"
+        metric_key = 'composite'
+        if global_dominant_failure == 'out_of_bounds': w_sp, w_kin, w_att = 0.7, 0.2, 0.1
+        elif global_dominant_failure == 'crashed': w_sp, w_kin, w_att = 0.2, 0.5, 0.3
+        elif global_dominant_failure == 'hover_timeout': w_sp, w_kin, w_att = 0.6, 0.2, 0.2
+        elif global_dominant_failure == 'landed_but_slid_into_valley': w_sp, w_kin, w_att = 0.1, 0.7, 0.2
+        else: w_sp, w_kin, w_att = 0.33, 0.33, 0.34
+
+    # 3. Aggregate Reward Components
+    comp_base_corrs = defaultdict(lambda: defaultdict(list))
+    comp_means = defaultdict(list)
+    
+    for seed in seed_payloads:
+        for col, corrs in seed.get('reward_components', {}).get('correlations', {}).items():
+            for c_type, val in corrs.items():
+                comp_base_corrs[col][c_type].append(val)
+        for col, mean_val in seed.get('reward_components', {}).get('means', {}).items():
+            comp_means[col].append(mean_val)
+            
+    # Compute component-level diagnostics
+    component_diagnostics = {}
+    total_abs_magnitude = sum([abs(np.mean(vals)) for vals in comp_means.values()]) + 1e-5
+    
+    for col in comp_base_corrs.keys():
+
+        mean_val = np.mean(comp_means[col])
+        relative_contribution = abs(mean_val) / total_abs_magnitude
+
+        # Resolve the chosen metric
+        if metric_key == 'composite':
+            mean_sp = np.mean(comp_base_corrs[col]['sp'])
+            mean_kin = np.mean(comp_base_corrs[col]['kin'])
+            mean_att = np.mean(comp_base_corrs[col]['att'])
+            mean_rho = (w_sp * mean_sp) + (w_kin * mean_kin) + (w_att * mean_att)
+        else:
+            mean_rho = np.mean(comp_base_corrs[col][metric_key])
+
+        component_diagnostics[col] = {
+            "alignment_rho": round(mean_rho, 3), 
+            "is_traitor_component": bool(mean_rho < -0.2), # Actively penalizing successful behavior
+            "relative_magnitude_pct": round(relative_contribution * 100, 1),
+            "is_dead_weight": bool(relative_contribution < 0.01) # Contributes < 1% to the gradient
+        }
+
+    # Aggregate Terminal Distributions
+    population_term_dist = defaultdict(float)
+    for seed in seed_payloads:
+        for status, pct in seed['terminal_distribution'].items():
+            population_term_dist[status] += (pct / num_seeds)
+
+    # 4. Build the Mac-bound LLM Payload
+    payload = {
+            "global_reward_topology": {
+                "mean_objective_alignment_rho": round(np.mean(oracle_rhos), 3),
+                "topology_is_inverted_flag": bool(np.mean(oracle_rhos) < 0),
+                "mean_survival_hacking_rho": round(np.mean(hacking_rhos), 3),
+                "survival_hacking_detected_flag": bool(np.mean(hacking_rhos) > 0.6),
+                "target_metric_name": target_name # Pass to translation layer
+            },
+            "dynamic_component_analysis": component_diagnostics,
+            "policy_fragility": {
+                "mean_intra_rollout_cv": round(np.mean(cvs), 3),
+                "mean_terminal_entropy_norm": round(np.mean(entropies), 3),
+                "systemic_policy_collapse_flag": bool(np.mean(entropies) < 0.1)
+            },
+            "population_terminal_distribution": dict(population_term_dist)
+        }
+
+    return payload
+
+def translate_reward_topology(agg_stochastic_json: dict) -> str:
+    """
+    Translates aggregated stochastic training metrics into a Reward Topology report.
+    Automatically generates a Markdown table for algorithmic credit assignment.
+    """
+    stoch = agg_stochastic_json.get("multi_seed_stochastic_health", {})
+    topo = stoch.get("global_reward_topology", {})
+    comps = stoch.get("dynamic_component_analysis", {})
+    frag = stoch.get("policy_fragility", {})
+
+    md = ["### 3. Reward Topology & Algorithmic Credit Assignment\n"]
+
+    # A. Global Objective Alignment
+    md.append("#### A. Global Objective Alignment (Oracle Test)")
+    oracle_rho = topo.get("mean_objective_alignment_rho", 0)
+    md.append(f"- **Objective Alignment ($\\rho$):** `{oracle_rho:.3f}`")
+    
+    if topo.get("topology_is_inverted_flag"):
+        md.append("  - *Diagnosis:* **CRITICAL FAILURE.** The total generated reward is NEGATIVELY correlated with successful landings. The agent is receiving mathematically higher returns for crashing/drifting than for landing safely.")
+    elif oracle_rho < 0.5:
+        md.append("  - *Diagnosis:* Weak alignment. The shaped reward landscape is poorly correlated with the actual goal of landing.")
+
+    if topo.get("survival_hacking_detected_flag"):
+        md.append("  - *Action Required:* **Survival Hacking Detected.** The agent is farming points by hovering/delaying the episode. Add a temporal penalty or check for positive constant rewards.")
+
+    # B. Component-Level Credit Assignment (The Dynamic Table)
+    md.append("\n#### B. Component-Level Contribution (Algorithmic Credit Assignment)")
+    md.append("This table isolates the exact mathematical impact of each component you generated.")
+
+    # Grab the dynamic target name (default to Success if missing)
+    target_name = topo.get("target_metric_name", "Task Success")
+    md.append(f"| Reward Component | Correlation w/ {target_name} ($\\rho$) | Relative Magnitude | Diagnostic Flag |")
+    md.append("|:---|:---:|:---:|:---|")
+    
+    for comp_name, metrics in comps.items():
+        rho = metrics.get('alignment_rho', 0) # Key was renamed here
+        mag = metrics.get('relative_magnitude_pct', 0)
+        
+        flag = "🟢 Optimal"
+        if metrics.get('is_traitor_component'):
+            flag = "🔴 **TRAITOR COMPONENT** (Invert/Remove)"
+        elif metrics.get('is_dead_weight'):
+            flag = "🟡 **DEAD WEIGHT** (Scale Too Low)"
+        elif rho < 0.2:
+            flag = "⚪ Neutral/Noisy"
+
+        md.append(f"| `{comp_name}` | {rho:.3f} | {mag:.1f}% | {flag} |")
+
+    # C. Stochastic Fragility
+    md.append("\n#### C. Stochastic Policy Fragility")
+    cv = frag.get("mean_intra_rollout_cv", 0)
+    ent = frag.get("mean_terminal_entropy_norm", 0)
+    md.append(f"- **Intra-Rollout Reward CV:** `{cv:.3f}` (Variance across seeds with *frozen* weights)")
+    md.append(f"- **Terminal Mode Entropy:** `{ent:.3f}`")
+    
+    if frag.get("systemic_policy_collapse_flag"):
+        md.append("  - *Diagnosis:* The stochastic policy has completely collapsed into a single pathological failure mode. The KL penalty likely prevented escape from a severe local minimum.")
+    elif cv > 0.5:
+        md.append("  - *Diagnosis:* The policy is highly fragile. Even with fixed network weights, the agent's performance swings wildly depending on environment initialization.")
+
+    return "\n".join(md)
+
 def generate_metric_payload(iteration:int, num_of_seeds:int =3):
+    """
+    Goes through the following CSVs analyzes each across all seeds trained
+    Results are passed to corresponding aggregating/cross-seed analysis script
+    Saves final results in metric_payloads directory, for passing to Controller script
+    CSVs = progress_iterXX_seedX.csv : Optimization Data, from SB3's built-in Logger 
+           iterXX_seedX_train.csv : Terminal Obs Vector & Reward Comp. Breakdown, via MultiEnvEpisodeTracker callback class
+           iterXX_seedX_eval.csv : Every timestep Obs Vector & Reward Comp. Breakdown, collected during evaluation script
+    """
     ws= ExperimentWorkspace(iteration = iteration)
     # List of paths to progress.csv
     path_list1 = [ws.dirs["telemetry_iteration"] / f"progress_iter{iteration:02d}_seed{i}.csv"
@@ -725,22 +722,24 @@ def generate_metric_payload(iteration:int, num_of_seeds:int =3):
     path_list2 = [ws.dirs["telemetry_iteration"] / f"iter{iteration:02d}_seed{i}_train.csv"
                  for i in range(num_of_seeds)]
     # Analyze each train_eps.csv
-    single_train_results = [analyze_single_seed_eval(path, idx) for idx, path in enumerate(path_list2)]
+    train_results = [analyze_single_seed_stochastic(path, idx) for idx, path in enumerate(path_list2)]
     # Analyzing train_eps.csv across seeds
-    train_payload = aggregate_eval_seeds(single_train_results)
+    train_payload = aggregate_stochastic_seeds(train_results)
 
     # List of paths to eval.csv
     path_list3 = [ws.dirs["telemetry_iteration"] / f"iter{iteration:02d}_seed{i}_eval.csv"
             for i in range(num_of_seeds)]
     # Analyze each eval.csv
-    single_eval_results = [analyze_single_seed_stochastic(path, idx) for idx, path in enumerate(path_list3)]
+    eval_results = [analyze_single_seed_eval(path, idx) for idx, path in enumerate(path_list3)]
     # Analyzing eval.csv across seeds
-    eval_payload = aggregate_stochastic_seeds(single_eval_results)
+    eval_payload = aggregate_eval_seeds(eval_results)
  
-    metrics = [progress_payload,train_payload,eval_payload]
-    save_path = ws.dirs['telemetry_paylods']/ f"iter{iteration:02d}_metric_payload.json"
-    with open(save_path, "w") as f:
-        json.dump(metrics,f ,indent=4)
+    metrics = {
+        "multi_seed_optimization_health" : progress_payload,
+        "multi_seed_stochastic_health" : train_payload,
+        "multi_seed_evaluation_health" : eval_payload
+        }
+    ws.save_metrics(iteration,metrics)
     return 
 
 def generate_diagnostic_report(metrics: dict) -> str:
@@ -755,4 +754,6 @@ if __name__ == "__main__":
     parser.add_argument("--iteration", type=int, required=True)
     parser.add_argument("--num_seeds", type=int, default=3)
     args = parser.parse_args()
+    
+    generate_metric_payload(args.iteration,args.num_seeds)
     

@@ -4,8 +4,8 @@ from datetime import timedelta
 
 # custom imports
 import prompts  
-from cognitive_node import CognitiveNode
-from config import Config
+from src.cognitive_node import CognitiveNode
+from src.config import Config
 from src.code_validation import CodeValidator
 from src.utils import extract_python_code
 
@@ -22,7 +22,7 @@ def generate_proposals(brain: CognitiveNode, iteration: int, diagnostic_report: 
         experiment_ledger=expt_ledger
     )
     
-    print("Generating Proposals...")
+    print("Generating Proposals")
     proposals = brain.chat(
         phase_name='strategist',
         system_prompt=sys_prompt,
@@ -44,7 +44,7 @@ def organize_proposals(brain: CognitiveNode, proposals: str) -> str:
         raw_strategist_output=proposals
     )
     
-    print("Organizing Proposals...")
+    print("Organizing Proposals")
     proposal_report = brain.chat(
         phase_name='organizer',
         system_prompt=sys_prompt,
@@ -68,7 +68,7 @@ def choose_proposal(brain: CognitiveNode, iteration: int, proposal_report: str, 
         strategist_proposals_markdown=proposal_report
     )
     
-    print("Choosing Proposal...")
+    print("Choosing Proposal")
     chosen_proposal = brain.chat(
         phase_name='research_lead',
         system_prompt=sys_prompt,
@@ -90,7 +90,7 @@ def generate_work_order(brain: CognitiveNode, chosen_proposal: str) -> str:
         research_lead_decision=chosen_proposal
     )
     
-    print("Generating Work Order...")
+    print("Generating Work Order")
     work_order = brain.chat(
         phase_name='dispatcher',
         system_prompt=sys_prompt,
@@ -117,7 +117,7 @@ def generate_code(brain: CognitiveNode, coder_payload: str, current_code: str, m
     generated_code = ""
 
     while attempt < max_retries:
-        print(f"Generating Code (Attempt {attempt + 1}/{max_retries})...")
+        print(f"Generating Code (Attempt {attempt + 1}/{max_retries})")
         
         raw_response = brain.chat(
             phase_name='coder',
@@ -163,7 +163,7 @@ def generate_ledger_entry(brain: CognitiveNode, iteration: int, val_payload: str
         new_diagnostic_report=diagnostic_report
     )
     
-    print("Generating Ledger Entry (Peer Review)...")
+    print("Generating Ledger Entry (Peer Review)")
     ledger_entry = brain.chat(
         phase_name='validator',
         system_prompt=sys_prompt,

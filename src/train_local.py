@@ -8,13 +8,13 @@ def run_local_cycle(iteration: int, num_seeds: int):
     try:
         # 1. Sequential Training
         for seed_id in range(num_seeds):
-            print(f"   ▶️ Training Seed {seed_id}...")
+            print(f"   ▶️ Training Seed {seed_id}")
             cmd = f"python3 train.py --iteration {iteration} --seed_id {seed_id}"
             subprocess.run(cmd, shell=True, check=True)
         
         # 2. Local Aggregation
-        print(f"   📊 Running Local Analysis...")
-        subprocess.run(f"python3 src/analysis.py --iteration {iteration}", shell=True, check=True)
+        print(f"   📊 Running Local Analysis")
+        subprocess.run(f"python3 src/analysis.py --iteration {iteration} --num_seeds {num_seeds}", shell=True, check=True)
         
         print(f"✅ Local Cycle {iteration} Complete.")
         

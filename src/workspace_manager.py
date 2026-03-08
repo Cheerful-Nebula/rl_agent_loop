@@ -99,10 +99,11 @@ class ExperimentWorkspace:
             return full_path
         
     def save_metrics(self, iteration, metrics_dict):
-        """Saves a JSON report card for a specific iteration."""
-        filepath = self.get_path("telemetry_iteration", iteration, "metrics.json")
+        """Saves the analyzed data from iteration as a JSON"""
+        filepath = self.get_path("telemetry_payloads", iteration, "metric_payload.json")
         with open(filepath, "w") as f:
             json.dump(metrics_dict, f, indent=4)
+        print(f"Iteration {iteration} Metrics JSON Saved To {filepath}")
 
     def load_metrics(self, iteration:int) -> dict[Any, Any]:
         """
@@ -115,3 +116,4 @@ class ExperimentWorkspace:
         
         with open(filepath, "r") as f:
             return json.load(f)
+        print(f"Load Iteration {iteration} Metric Payload From {filepath}")

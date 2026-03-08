@@ -36,8 +36,9 @@ case "$TAG" in
   SELECTED_CONTROLLER="controllers/thinking.py"
   ;;
   *)
+    echo -e "\n"
     echo "📉 MODE: Standard Text Analysis"
-    SELECTED_CONTROLLER="controllers/standard_copy.py"
+    SELECTED_CONTROLLER="controllers/standard.py"
     ;;
 esac
 # 🚀 LOGIC SWITCH 2: Select Training Engine based on Tag
@@ -75,7 +76,7 @@ format_steps() {
 }
 
 for model in "${MODELS[@]}"; do
-  echo -e "\n\n"
+  echo -e "\n"
   echo "============================================"
   echo " 🥊 BENCHMARKING MODEL: $model"
   echo "============================================"
