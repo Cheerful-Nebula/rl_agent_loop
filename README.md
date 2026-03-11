@@ -2,55 +2,31 @@
 
 **A locally-hosted, closed-loop pipeline that translates continuous-control physics into deterministic statistics to autonomously write, train, and debug Reinforcement Learning reward functions.**
 
-<<<<<<< HEAD
-## **Executive Summary**
-=======
+
 ## Executive Summary
->>>>>>> 9e2fbdbd3777b656750038313e2163da5d6b244e
 
 * Reinforcement Learning (RL) agents are notorious for exploiting poorly designed reward functions. During the development of a LunarLander-v3 agent, I encountered a fundamental problem: tracking a single "Total Reward" line graph doesn't explain *why* an agent fails. The agent might plummet into the ground, hover until it runs out of time, or land perfectly but slide off the pad—all of which might yield the exact same numerical penalty.
 * To solve this, I built a locally-hosted, Multi-Agent LLM pipeline that automates Algorithmic Reward Design (ARD). Instead of relying on human intuition to manually tweak penalty coefficients, this system translates continuous-control physics into deterministic statistics. It uses a 6-stage "Chain-of-Agents" architecture to evaluate physical telemetry, generate novel mathematical reward functions, write the Python code, train a PPO agent, and scientifically validate the outcome—completely unsupervised.
 
 ## Technical Highlights
 
-<<<<<<< HEAD
 * **The Deterministic Translation Layer:** 
 LLMs hallucinate when fed raw neural network weights or unstructured logs. To solve this, a Python layer intercepts the PPO telemetry and translates it into pure, objective statistics (e.g., Critic Saturation Index, Actuator Chatter Rates). It converts an opaque RL environment into a structured tabular data problem.
-
-=======
-* **The Deterministic Translation Layer:** LLMs hallucinate when fed raw neural network weights or unstructured logs. To solve this, a Python layer intercepts the PPO telemetry and translates it into pure, objective statistics (e.g., Critic Saturation Index, Actuator Chatter Rates). It converts an opaque RL environment into a structured tabular data problem.
->>>>>>> 9e2fbdbd3777b656750038313e2163da5d6b244e
 
 * **Decoupled Agentic Workflow:**
 To prevent context-window saturation and syntax collapse, reasoning is strictly isolated from execution. The system uses a 6-stage routing protocol where specialized agents (Strategist, Research Lead, Coder, Validator) are restricted to single, distinct objectives.
 
-<<<<<<< HEAD
-
 * **Algorithmic Credit Assignment:**
 The system actively computes Pearson correlations ($\rho$) between individual reward components and dynamic physical proxies (like Euclidean speed or spatial proximity). This allows the LLM to mathematically identify which parts of its generated code are helping, and which are actively causing crashes.
 
-
-* **High-Efficiency Local Orchestration:**
+* **Local Orchestration:**
 Designed to run completely unsupervised on local hardware. The pipeline utilizes distributed compute (a Linux server handling PPO training, and a MacBook Pro M4 Max handling LLM inference) to dynamically rewrite physics, train, and validate using a highly-quantized 8B reasoning model in under 8 minutes per iteration.
 
-
-## **System Architecture: The Decoupled Loop**
-
-Passing raw RL telemetry into an LLM's context window leads to immediate hallucination. To prevent this, the pipeline is strictly decoupled into two domains: **Execution & Translation** (Linux Compute Node) and **Meta-Reasoning** (MacBook Pro + Local LLMs).
-
-
-=======
-* **Algorithmic Credit Assignment:**
-The system actively computes Pearson correlations ($\rho$) between individual reward components and dynamic physical proxies (like Euclidean speed or spatial proximity). This allows the LLM to mathematically identify which parts of its generated code are helping, and which are actively causing crashes.
-
-* **High-Efficiency Local Orchestration:**
-Designed to run completely unsupervised on local hardware. The pipeline utilizes distributed compute (a Linux server handling PPO training, and a MacBook Pro M4 Max handling LLM inference) to dynamically rewrite physics, train, and validate using a highly-quantized 8B reasoning model in under 8 minutes per iteration.
 
 ## System Architecture: The Decoupled Loop
 
 Passing raw RL telemetry into an LLM's context window leads to immediate hallucination. To prevent this, the pipeline is strictly decoupled into two domains: **Execution & Translation** (Linux Compute Node) and **Meta-Reasoning** (MacBook Pro + Local LLMs).
 
->>>>>>> 9e2fbdbd3777b656750038313e2163da5d6b244e
 **Phase 1: Deterministic Translation (The Physics Engine)**
 
 Before the LLM sees any data, a Python layer intercepts the PPO training logs and translates them into semantic physical states. It dynamically computes Pearson correlations ($\rho$) between individual reward terms and physical proxies (like Euclidean speed or spatial proximity). This converts an opaque RL black-box into a clear tabular data problem.
@@ -183,9 +159,13 @@ ollama pull deepseek-r1:8b
 ```
 
 **3. Execute the Pipeline**
-Start the orchestration loop. The Workspace Manager will automatically generate your experiment directories.
+
+* Start the orchestration loop using the `outer_loop.sh` script.
+* Followed by an integer of the number of iterations, then interger for the number of timesteps each PPO agent will be trained on the newly genretaetd reward function.
+* Using the word `remote` triggers a distributed compute cycle, don't include `remote` to have entire loop run on a single computer.
+* The Workspace Manager will automatically generate your experiment directories.
 
 ```bash
-./outer_loop.sh
+./outer_loop.sh 10 1000000 remote
 
 ```
