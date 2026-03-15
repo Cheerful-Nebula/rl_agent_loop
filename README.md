@@ -3,6 +3,9 @@
 **A locally-hosted, closed-loop pipeline that translates continuous-control physics into deterministic statistics to autonomously write, train, and debug Reinforcement Learning reward functions.**
 
 
+**High-level System Overview**
+![ARD Pipeline Architecture](assets/ard_pipeline_overview.png)
+
 ## Executive Summary
 
 * Reinforcement Learning (RL) agents are notorious for exploiting poorly designed reward functions. During the development of a LunarLander-v3 agent, I encountered a fundamental problem: tracking a single "Total Reward" line graph doesn't explain *why* an agent fails. The agent might plummet into the ground, hover until it runs out of time, or land perfectly but slide off the pad—all of which might yield the exact same numerical penalty.
@@ -41,6 +44,7 @@ To prevent syntax collapse, reasoning is isolated from execution using 6 highly 
 5. **Coder:** Operates in a strict syntax-only sandbox to inject the Python logic into the Gymnasium wrapper.
 6. **Validator:** Evaluates the *next* iteration's diagnostic report against the original hypothesis, specifically hunting for reward hacking, and compresses the failure into an immutable lesson.
 
+**Detailed Data Flow**
 ```mermaid
 %%{init: {"theme": "base"} }%%
 graph TD
@@ -144,7 +148,7 @@ This pipeline requires a dual-node setup (or a single machine running both the L
 **1. Install Dependencies**
 
 ```bash
-git clone [https://github.com/Cheerful-Nebula/rl_agent_loop.git](https://github.com/Cheerful-Nebula/rl_agent_loop.git)
+git clone https://github.com/Cheerful-Nebula/rl_agent_loop.git
 cd rl_agent_loop
 pip install -r requirements.txt
 
@@ -161,7 +165,7 @@ ollama pull deepseek-r1:8b
 **3. Execute the Pipeline**
 
 * Start the orchestration loop using the `outer_loop.sh` script.
-* Followed by an integer of the number of iterations, then interger for the number of timesteps each PPO agent will be trained on the newly genretaetd reward function.
+* Followed by desired number of iterations (integer), then the number of timesteps each PPO agent will be trained on the newly generated reward function (integer).
 * Using the word `remote` triggers a distributed compute cycle, don't include `remote` to have entire loop run on a single computer.
 * The Workspace Manager will automatically generate your experiment directories.
 

@@ -31,4 +31,5 @@ testing_suite/
 inspect_model.py
 sandbox.ipynb
 
-
+# Just a temporary file to use NotebookLM to generate infographic based on structure of project
+READ_ME.MD
